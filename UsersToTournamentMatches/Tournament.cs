@@ -74,20 +74,13 @@ namespace UsersToTournamentMatches
                 }
             }
 
-            if (tournamentToLinks.ContainsKey("Official Smogon Tournament"))
-            {
-                //tournamentToLinks.Remove("Official Smogon Tournament");
-            }
-            else
+            if (!tournamentToLinks.ContainsKey("Official Smogon Tournament"))
             {
                 tournamentToLinks.Add("Official Smogon Tournament", ostForum);
             }
             tournamentToLinks.Add("Standard Tournament Forums", officialTournamentSite);
 
             Dictionary<string, List<string>> threadsForForums = new Dictionary<string, List<string>>();
-
-            //ScanOSTThreads(threadsForForums);
-
             foreach (KeyValuePair<string, string> kv in tournamentToLinks)
             {
                 threadsForForums.Add(kv.Value, new List<string>());
@@ -157,53 +150,6 @@ namespace UsersToTournamentMatches
 
             return nameUserTranslation;
 
-        }
-
-        private void ScanOSTThreads(Dictionary<string, List<string>> threadsForForums)
-        {
-            foreach (string siteString in new string[] { ostForum, officialTournamentSite })
-            {
-                threadsForForums.Add(siteString, new List<string>());
-
-                string bigSite = client.DownloadString(siteString);
-                int bigPages = 1;
-                if (bigSite.Contains("<nav class=\"pageNavWrapper"))
-                {
-                    string temp = bigSite;
-                    while (temp.Contains("pageNav-page"))
-                    {
-                        temp = temp.Substring(temp.IndexOf("pageNav-page") + "pageNav-page".Length);
-                    }
-                    temp = temp.Substring(temp.IndexOf(">") + 1);
-                    temp = temp.Substring(temp.IndexOf(">") + 1);
-                    temp = temp.Substring(0, temp.IndexOf("<"));
-                    bigPages = int.Parse(temp);
-                }
-
-                for (int pageCount = 1; pageCount <= bigPages; pageCount++)
-                {
-                    bigSite = client.DownloadString(siteString + "page-" + pageCount);
-
-                    foreach (string line in bigSite.Split('\n'))
-                    {
-                        if (line.Contains("data-preview-url"))
-                        {
-                            string tempInside = line.Substring(line.IndexOf("data-preview-url") + "data-preview-url".Length);
-                            tempInside = tempInside.Substring(tempInside.IndexOf("\"") + 1);
-                            if (!tempInside.Contains("/preview"))
-                            {
-                                continue;
-                            }
-                            tempInside = tempInside.Substring(0, tempInside.IndexOf("/preview") + 1);
-                            string url = "http://www.smogon.com" + tempInside;
-                            if (!url.Contains("season-") && !url.Contains("signup") && url.Contains("official-smogon-tournament"))
-                            {
-                                threadsForForums[siteString].Add(url);
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         private void AnalyzeTopic(string url, WebClient client)
