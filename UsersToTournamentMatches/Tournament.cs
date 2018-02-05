@@ -399,12 +399,13 @@ namespace UsersToTournamentMatches
                             finished = true,
                         };
 
+
                         // Order by name length of the users so that short common terms are ignored longer and bigger names can be respected
                         users = users.OrderByDescending(u => u.name.Length).ToList();
 
                         foreach (User user in users)
                         {
-                            if (regexWithSpaceFullPost.Contains(" " + user.name + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[user.name] + " "))
+                            if (user != nameUserTranslation[match.firstUser] && (regexWithSpaceFullPost.Contains(" " + user.name + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[user.name] + " ")))
                             {
                                 match.secondUser = user.name;
                                 break;
@@ -433,7 +434,10 @@ namespace UsersToTournamentMatches
                         {
                             link = tempLine.Substring(0, tempLine.IndexOf("\""));
                         }
-                        match.replays.Add("https://" + link);
+                        if (!match.replays.Contains("https://" + link))
+                        {
+                            match.replays.Add("https://" + link);
+                        }
                         if (arrow < quot)
                         {
                             tempLine = tempLine.Substring(tempLine.IndexOf("<"));
@@ -476,7 +480,12 @@ namespace UsersToTournamentMatches
 
                 string toFilterFor = "vs";
 
-                string preparedLine = StripHTML(FilterOutTierDefinition(line));
+                if(line.Contains(" vs. "))
+                {
+                    toFilterFor = "vs.";
+                }
+
+                string preparedLine = FilterOutTierDefinition(StripHTML(line));
 
                 if (preparedLine != toFilterFor && preparedLine.Contains(" " + toFilterFor + " "))
                 {
@@ -566,7 +575,10 @@ namespace UsersToTournamentMatches
                             {
                                 link = tempLine.Substring(0, tempLine.IndexOf("\""));
                             }
-                            match.replays.Add("https://" + link);
+                            if (!match.replays.Contains("https://" + link))
+                            {
+                                match.replays.Add("https://" + link);
+                            }
                             if (arrow < quot)
                             {
                                 tempLine = tempLine.Substring(tempLine.IndexOf("<"));
@@ -646,7 +658,7 @@ namespace UsersToTournamentMatches
         }
 
         private Regex htmlRegex = new Regex("<.*?>");
-        private Regex eckigRegex = new Regex("[.*?]");
+        private Regex eckigRegex = new Regex("\\[.*?\\]");
         private string StripHTML(string inputString)
         {
             return eckigRegex.Replace(htmlRegex.Replace(inputString, ""), "").Trim();
