@@ -437,6 +437,7 @@ namespace UsersToTournamentMatches
                         if (!match.replays.Contains("https://" + link))
                         {
                             match.replays.Add("https://" + link);
+                            match.finished = true;
                         }
                         if (arrow < quot)
                         {
@@ -578,6 +579,7 @@ namespace UsersToTournamentMatches
                             if (!match.replays.Contains("https://" + link))
                             {
                                 match.replays.Add("https://" + link);
+                                match.finished = true;
                             }
                             if (arrow < quot)
                             {
@@ -595,56 +597,10 @@ namespace UsersToTournamentMatches
                 }
 
             }
-            /*else if ((Regex(line).Contains("gg") || Regex(line).Contains(Regex(" won ")) || Regex(line).Contains(Regex(" win ")) || Regex(line).Contains(Regex(" lost ")) || Regex(line).Contains(Regex(" lose "))) || RegexWithSpace(line).Contains(" vs "))
+            if (!line.Contains("/likes\""))
             {
-                canTakeReplay = true;
-
-                if (line.Contains("replay.pokemonshowdown.com/"))
-                {
-                    Match match;
-                    if (currentlyUserToMatch.ContainsKey(Regex(postedBy)))
-                    {
-                        match = currentlyUserToMatch[Regex(postedBy)];
-                    }
-                    else
-                    {
-                        match = new Match
-                        {
-                            firstUser = nameUserTranslation[Regex(postedBy)],
-                            thread = thread,
-                            finished = true
-                        };
-                        match.postDate = postDate;
-                    }
-
-                    string tempLine = line;
-                    while (tempLine.Contains("replay.pokemonshowdown.com/"))
-                    {
-                        tempLine = tempLine.Substring(tempLine.IndexOf("replay.pokemonshowdown.com/"));
-                        int quot = tempLine.Contains("\"") ? tempLine.IndexOf("\"") : int.MaxValue;
-                        int arrow = tempLine.Contains("<") ? tempLine.IndexOf("<") : int.MaxValue;
-                        string link;
-                        if (arrow < quot)
-                        {
-                            link = tempLine.Substring(0, tempLine.IndexOf("<"));
-                        }
-                        else
-                        {
-                            link = tempLine.Substring(0, tempLine.IndexOf("\""));
-                        }
-                        match.replays.Add("https://" + link);
-                        if (arrow < quot)
-                        {
-                            tempLine = tempLine.Substring(tempLine.IndexOf("<"));
-                        }
-                        else
-                        {
-                            tempLine = tempLine.Substring(tempLine.IndexOf("\""));
-                        }
-                    }
-                }
-            }*/
-            fullPost = fullPost.Append(line).Append("\n");
+                fullPost = fullPost.Append(line).Append("\n");
+            }
         }
 
         private string FilterOutTierDefinition(string line)
