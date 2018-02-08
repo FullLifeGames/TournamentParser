@@ -27,6 +27,7 @@ namespace UsersToTournamentMatches
         public Tournament()
         {
             client = new WebClient();
+            client.Encoding = Encoding.UTF8;
         }
 
         private static Regex rgx = new Regex("[^a-zA-Z0-9]");
@@ -141,7 +142,7 @@ namespace UsersToTournamentMatches
         public Dictionary<string, User> GetMatchesForUsers()
         {
             Dictionary<string, List<string>> threadsForForums = GetThreadsForForums();
-            
+
             int totalCount = 0;
             foreach (KeyValuePair<string, List<string>> kv in threadsForForums)
             {
