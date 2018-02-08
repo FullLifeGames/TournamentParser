@@ -126,10 +126,7 @@ namespace UsersToTournamentMatches
                             }
                             tempInside = tempInside.Substring(0, tempInside.IndexOf("/preview") + 1);
                             string url = "http://www.smogon.com" + tempInside;
-                            if (!url.Contains("signup"))
-                            {
-                                threadsForForums[kv.Value].Add(url);
-                            }
+                            threadsForForums[kv.Value].Add(url);
                         }
                     }
                 }
