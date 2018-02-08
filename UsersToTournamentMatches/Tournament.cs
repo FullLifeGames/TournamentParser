@@ -238,8 +238,8 @@ namespace UsersToTournamentMatches
         {
             if(line.Contains("<h1 class=\"p-title-value\">"))
             {
-                thread.name = line.Substring(line.IndexOf(">") + 1);
-                thread.name = thread.name.Substring(0, thread.name.IndexOf("<"));
+                thread.name = line.Substring(0, line.LastIndexOf("<"));
+                thread.name = thread.name.Substring(thread.name.LastIndexOf(">") + 1);
             }
             else if(line.Contains("<dd class=\"blockStatus-message blockStatus-message--locked\">"))
             {
