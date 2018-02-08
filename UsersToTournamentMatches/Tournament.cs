@@ -16,6 +16,8 @@ namespace UsersToTournamentMatches
         private string officialTournamentSite = "http://www.smogon.com/forums/forums/tournaments.34/";
         private string ostForum = "http://www.smogon.com/forums/forums/official-smogon-tournament.463/";
 
+        private string circuitTournaments = "http://www.smogon.com/forums/forums/circuit-tournaments.351/";
+        private string teamTournaments = "http://www.smogon.com/forums/forums/team-tournaments.468/";
 
         private List<User> users = new List<User>();
         private Dictionary<string, User> nameUserTranslation = new Dictionary<string, User>();
@@ -41,13 +43,12 @@ namespace UsersToTournamentMatches
             return toFilter.ToLower();
         }
 
-
-        public Dictionary<string, User> GetMatchesForUsers()
+        public Dictionary<string, List<string>> GetThreadsForForums()
         {
+            Dictionary<string, string> tournamentToLinks = new Dictionary<string, string>();
             string smogonMain = client.DownloadString("http://www.smogon.com/forums/");
             bool scanStartOne = false;
 
-            Dictionary<string, string> tournamentToLinks = new Dictionary<string, string>();
             foreach (string line in smogonMain.Split('\n'))
             {
                 if (scanStartOne)
@@ -77,6 +78,14 @@ namespace UsersToTournamentMatches
             if (!tournamentToLinks.ContainsKey("Official Smogon Tournament"))
             {
                 tournamentToLinks.Add("Official Smogon Tournament", ostForum);
+            }
+            if (!tournamentToLinks.ContainsKey("Circuit Tournaments"))
+            {
+                tournamentToLinks.Add("Circuit Tournaments", circuitTournaments);
+            }
+            if (!tournamentToLinks.ContainsKey("Team Tournaments"))
+            {
+                tournamentToLinks.Add("Team Tournaments", teamTournaments);
             }
             tournamentToLinks.Add("Standard Tournament Forums", officialTournamentSite);
 
@@ -128,6 +137,13 @@ namespace UsersToTournamentMatches
                 Console.WriteLine("Found " + (afterCount - beforeCount) + " scannable tournament threads in: " + kv.Value);
                 Console.WriteLine();
             }
+            return threadsForForums;
+        }
+
+
+        public Dictionary<string, User> GetMatchesForUsers()
+        {
+            Dictionary<string, List<string>> threadsForForums = GetThreadsForForums();
 
             int totalCount = 0;
             foreach (KeyValuePair<string, List<string>> kv in threadsForForums)
