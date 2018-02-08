@@ -144,7 +144,7 @@ namespace UsersToTournamentMatches
         public Dictionary<string, User> GetMatchesForUsers()
         {
             Dictionary<string, List<string>> threadsForForums = GetThreadsForForums();
-
+            
             int totalCount = 0;
             foreach (KeyValuePair<string, List<string>> kv in threadsForForums)
             {
@@ -448,7 +448,7 @@ namespace UsersToTournamentMatches
                     toFilterFor = "vs.";
                 }
 
-                string preparedLine = FilterOutTierDefinition(StripHTML(line));
+                string preparedLine = FilterOutTierDefinition(StripHTML(FilterBannedTerms(line)));
 
                 if (preparedLine != toFilterFor && preparedLine.Contains(" " + toFilterFor + " "))
                 {
@@ -563,6 +563,11 @@ namespace UsersToTournamentMatches
             {
                 fullPost = fullPost.Append(line).Append("\n");
             }
+        }
+
+        private string FilterBannedTerms(string v)
+        {
+            return v.Replace("(activity)", "");
         }
 
         private string FilterOutTierDefinition(string line)
