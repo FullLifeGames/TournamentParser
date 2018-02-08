@@ -263,7 +263,7 @@ namespace UsersToTournamentMatches
                 postDate = DateTime.ParseExact(temp, "MMM d, yyyy h:mm tt", CultureInfo.GetCultureInfo("en-US"));
                 timerHeader = false;
             }
-            else if (line.StartsWith("\t</article>"))
+            else if (line.StartsWith("\t</article>") && !url.Contains("-replay"))
             {
                 postStarted = false;
                 canTakeReplay = false;
