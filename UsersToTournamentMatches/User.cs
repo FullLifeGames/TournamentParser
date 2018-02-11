@@ -12,6 +12,7 @@ namespace UsersToTournamentMatches
         public int id = -1;
         public String name = null;
         public String profileLink = null;
+        public String normalName = null;
         public List<Match> matches = new List<Match>();
 
         public override string ToString()

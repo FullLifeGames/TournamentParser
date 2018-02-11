@@ -283,6 +283,7 @@ namespace UsersToTournamentMatches
                         User newUser = new User
                         {
                             id = dataUserId,
+                            normalName = postedBy,
                             name = Regex(postedBy),
                             profileLink = "http://www.smogon.com" + userLink
                         };
@@ -316,6 +317,7 @@ namespace UsersToTournamentMatches
 
                         if (existingUser.name == null)
                         {
+                            existingUser.normalName = postedBy;
                             existingUser.name = Regex(postedBy);
                             nameUserTranslation.Add(Regex(postedBy), existingUser);
                             userWithSpaceTranslation.Add(Regex(postedBy), RegexWithSpace(postedBy));
@@ -331,16 +333,16 @@ namespace UsersToTournamentMatches
                     }
                 }
 
+                User currentUser = nameUserTranslation[Regex(postedBy)];
                 string fullPostString = fullPost.ToString();
                 string regexFullPost = Regex(StripHTML(fullPostString));
-                string regexWithSpaceFullPost = RegexWithSpace(StripHTML(fullPostString));
+                string regexWithSpaceFullPost = RegexWithSpace(StripHTML(fullPostString)).Replace(RegexWithSpace(currentUser.normalName), "").Replace(Regex(currentUser.normalName), "");
                 if (fullPostString.Contains("replay.pokemonshowdown.com/") && postNumber != 1)
                 {
                     bool notExistingMatch = true;
                     Match match = null;
                     if (currentlyUserToMatch.ContainsKey(Regex(postedBy)))
                     {
-                        User currentUser = nameUserTranslation[Regex(postedBy)];
                         foreach (Match currentMatch in currentlyUserToMatch[Regex(postedBy)])
                         {
                             if (nameUserTranslation[currentMatch.firstUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.firstUser + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[currentMatch.firstUser] + " "))
@@ -467,6 +469,7 @@ namespace UsersToTournamentMatches
                     else
                     {
                         User firstUser = new User();
+                        firstUser.normalName = userOne;
                         firstUser.name = Regex(userOne);
                         match.firstUser = firstUser.name;
                         users.Add(firstUser);
@@ -490,6 +493,7 @@ namespace UsersToTournamentMatches
                     else
                     {
                         User secondUser = new User();
+                        secondUser.normalName = userTwo;
                         secondUser.name = Regex(userTwo);
                         match.secondUser = secondUser.name;
                         users.Add(secondUser);
