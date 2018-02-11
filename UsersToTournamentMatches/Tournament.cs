@@ -218,9 +218,11 @@ namespace UsersToTournamentMatches
 
                     List<string> currentTeams = new List<string>();
 
+                    bool takePost = false;
+
                     foreach (string line in site.Split('\n'))
                     {
-                        HandleLine(url, pageCount, ref blockStarted, ref blockText, ref postStarted, ref postNumber, ref postLink, ref postLikes, ref postDate, ref postedBy, ref likeStarted, ref timerHeader, currentTeams, line, ref lastLine, ref canTakeReplay, ref dataUserId, ref userLink, thread, currentlyUserToMatch, ref fullPost);
+                        HandleLine(url, pageCount, ref blockStarted, ref blockText, ref postStarted, ref postNumber, ref postLink, ref postLikes, ref postDate, ref postedBy, ref likeStarted, ref timerHeader, currentTeams, line, ref lastLine, ref canTakeReplay, ref dataUserId, ref userLink, thread, currentlyUserToMatch, ref fullPost, ref takePost);
                     }
                 }
             }
@@ -232,12 +234,16 @@ namespace UsersToTournamentMatches
             }
         }
 
-        private void HandleLine(string url, int pageCount, ref bool blockStarted, ref string blockText, ref bool postStarted, ref int postNumber, ref string postLink, ref int postLikes, ref DateTime postDate, ref string postedBy, ref bool likeStarted, ref bool timerHeader, List<string> currentTeams, string line, ref string lastLine, ref bool canTakeReplay, ref int dataUserId, ref string userLink, Thread thread, Dictionary<string, List<Match>> currentlyUserToMatch, ref StringBuilder fullPost)
+        private void HandleLine(string url, int pageCount, ref bool blockStarted, ref string blockText, ref bool postStarted, ref int postNumber, ref string postLink, ref int postLikes, ref DateTime postDate, ref string postedBy, ref bool likeStarted, ref bool timerHeader, List<string> currentTeams, string line, ref string lastLine, ref bool canTakeReplay, ref int dataUserId, ref string userLink, Thread thread, Dictionary<string, List<Match>> currentlyUserToMatch, ref StringBuilder fullPost, ref bool takePost)
         {
             if(line.Contains("<h1 class=\"p-title-value\">"))
             {
                 thread.name = line.Substring(0, line.LastIndexOf("<"));
                 thread.name = thread.name.Substring(thread.name.LastIndexOf(">") + 1);
+            }
+            else if(line.Contains("<article class=\"message-body js-selectToQuote\">"))
+            {
+                takePost = true;
             }
             else if(line.Contains("<dd class=\"blockStatus-message blockStatus-message--locked\">"))
             {
@@ -268,6 +274,7 @@ namespace UsersToTournamentMatches
             {
                 postStarted = false;
                 canTakeReplay = false;
+                takePost = false;
 
                 if (!idUserTranslation.ContainsKey(dataUserId))
                 {
@@ -430,7 +437,7 @@ namespace UsersToTournamentMatches
                 postedBy = postedBy.Substring(postedBy.IndexOf("\"") + 1);
                 postedBy = postedBy.Substring(0, postedBy.IndexOf("\""));
             }
-            else if ((line.Contains(" vs. ") || line.Contains(" vs ")) && (postNumber == 1 || postNumber == 2))
+            else if ((StripHTML(line).Contains(" vs. ") || StripHTML(line).Contains(" vs ")) && (postNumber == 1 || postNumber == 2))
             {
                 Match match = new Match();
 
@@ -557,7 +564,7 @@ namespace UsersToTournamentMatches
                 }
 
             }
-            if (!line.Contains("/likes\""))
+            if (takePost && !line.Contains("/likes\""))
             {
                 fullPost = fullPost.Append(line).Append("\n");
             }
