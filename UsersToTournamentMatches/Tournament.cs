@@ -276,145 +276,148 @@ namespace UsersToTournamentMatches
                 canTakeReplay = false;
                 takePost = false;
 
-                if (!idUserTranslation.ContainsKey(dataUserId))
+                if (dataUserId != 0)
                 {
-                    if (!nameUserTranslation.ContainsKey(Regex(postedBy)))
+                    if (!idUserTranslation.ContainsKey(dataUserId))
                     {
-                        User newUser = new User
+                        if (!nameUserTranslation.ContainsKey(Regex(postedBy)))
                         {
-                            id = dataUserId,
-                            normalName = postedBy,
-                            name = Regex(postedBy),
-                            profileLink = "http://www.smogon.com" + userLink
-                        };
+                            User newUser = new User
+                            {
+                                id = dataUserId,
+                                normalName = postedBy,
+                                name = Regex(postedBy),
+                                profileLink = "http://www.smogon.com" + userLink
+                            };
 
-                        users.Add(newUser);
-                        nameUserTranslation.Add(Regex(postedBy), newUser);
-                        userWithSpaceTranslation.Add(Regex(postedBy), RegexWithSpace(postedBy));
-                        idUserTranslation.Add(dataUserId, newUser);
-                    }
-                    else
-                    {
-                        User existingUser = nameUserTranslation[Regex(postedBy)];
-
-                        if (existingUser.profileLink == null)
-                        {
-                            existingUser.id = dataUserId;
-                            existingUser.profileLink = "http://www.smogon.com" + userLink;
-                            idUserTranslation.Add(dataUserId, existingUser);
-                        }
-                        else
-                        {
-                            Console.WriteLine("Strange behavior with User: " + existingUser.name);
-                        }
-                    }
-                }
-                else
-                {
-                    if (!nameUserTranslation.ContainsKey(Regex(postedBy)))
-                    {
-                        User existingUser = idUserTranslation[dataUserId];
-
-                        if (existingUser.name == null)
-                        {
-                            existingUser.normalName = postedBy;
-                            existingUser.name = Regex(postedBy);
-                            nameUserTranslation.Add(Regex(postedBy), existingUser);
+                            users.Add(newUser);
+                            nameUserTranslation.Add(Regex(postedBy), newUser);
                             userWithSpaceTranslation.Add(Regex(postedBy), RegexWithSpace(postedBy));
+                            idUserTranslation.Add(dataUserId, newUser);
                         }
                         else
                         {
-                            Console.WriteLine("Strange behavior with User: " + existingUser.name);
+                            User existingUser = nameUserTranslation[Regex(postedBy)];
+
+                            if (existingUser.profileLink == null)
+                            {
+                                existingUser.id = dataUserId;
+                                existingUser.profileLink = "http://www.smogon.com" + userLink;
+                                idUserTranslation.Add(dataUserId, existingUser);
+                            }
+                            else
+                            {
+                                Console.WriteLine("Strange behavior with User: " + existingUser.name);
+                            }
                         }
                     }
                     else
                     {
-                        // Just exists already, proceed as normal
-                    }
-                }
-
-                User currentUser = nameUserTranslation[Regex(postedBy)];
-                string fullPostString = fullPost.ToString();
-                string regexFullPost = Regex(StripHTML(fullPostString));
-                string regexWithSpaceFullPost = RegexWithSpace(StripHTML(fullPostString)).Replace(RegexWithSpace(currentUser.normalName), "").Replace(Regex(currentUser.normalName), "");
-                if (fullPostString.Contains("replay.pokemonshowdown.com/") && postNumber != 1)
-                {
-                    bool notExistingMatch = true;
-                    Match match = null;
-                    if (currentlyUserToMatch.ContainsKey(Regex(postedBy)))
-                    {
-                        foreach (Match currentMatch in currentlyUserToMatch[Regex(postedBy)])
+                        if (!nameUserTranslation.ContainsKey(Regex(postedBy)))
                         {
-                            if (nameUserTranslation[currentMatch.firstUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.firstUser + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[currentMatch.firstUser] + " "))
+                            User existingUser = idUserTranslation[dataUserId];
+
+                            if (existingUser.name == null)
                             {
-                                match = currentMatch;
-                                notExistingMatch = false;
-                                break;
+                                existingUser.normalName = postedBy;
+                                existingUser.name = Regex(postedBy);
+                                nameUserTranslation.Add(Regex(postedBy), existingUser);
+                                userWithSpaceTranslation.Add(Regex(postedBy), RegexWithSpace(postedBy));
                             }
-                            if (currentMatch.secondUser != null && nameUserTranslation[currentMatch.secondUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.secondUser + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[currentMatch.secondUser] + " "))
+                            else
                             {
-                                match = currentMatch;
-                                notExistingMatch = false;
-                                break;
+                                Console.WriteLine("Strange behavior with User: " + existingUser.name);
                             }
-                        }
-                    }
-                    if (notExistingMatch)
-                    {
-                        match = new Match
-                        {
-                            firstUser = nameUserTranslation[Regex(postedBy)].name,
-                            thread = thread,
-                            finished = true,
-                        };
-
-
-                        // Order by name length of the users so that short common terms are ignored longer and bigger names can be respected
-                        users = users.OrderByDescending(u => u.name.Length).ToList();
-
-                        foreach (User user in users)
-                        {
-                            if (user != nameUserTranslation[match.firstUser] && (regexWithSpaceFullPost.Contains(" " + user.name + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[user.name] + " ")))
-                            {
-                                match.secondUser = user.name;
-                                break;
-                            }
-                        }
-                        match.postDate = postDate;
-                        nameUserTranslation[match.firstUser].matches.Add(match);
-                        if (match.secondUser != null)
-                        {
-                            nameUserTranslation[match.secondUser].matches.Add(match);
-                        }
-                    }
-
-                    string tempLine = fullPostString;
-                    while (tempLine.Contains("replay.pokemonshowdown.com/"))
-                    {
-                        tempLine = tempLine.Substring(tempLine.IndexOf("replay.pokemonshowdown.com/"));
-                        int quot = tempLine.Contains("\"") ? tempLine.IndexOf("\"") : int.MaxValue;
-                        int arrow = tempLine.Contains("<") ? tempLine.IndexOf("<") : int.MaxValue;
-                        string link;
-                        if (arrow < quot)
-                        {
-                            link = tempLine.Substring(0, tempLine.IndexOf("<"));
                         }
                         else
                         {
-                            link = tempLine.Substring(0, tempLine.IndexOf("\""));
+                            // Just exists already, proceed as normal
                         }
-                        if (!match.replays.Contains("https://" + link))
+                    }
+
+                    User currentUser = nameUserTranslation[Regex(postedBy)];
+                    string fullPostString = fullPost.ToString();
+                    string regexFullPost = Regex(StripHTML(fullPostString));
+                    string regexWithSpaceFullPost = RegexWithSpace(StripHTML(fullPostString)).Replace(RegexWithSpace(currentUser.normalName), "").Replace(Regex(currentUser.normalName), "");
+                    if (fullPostString.Contains("replay.pokemonshowdown.com/") && postNumber != 1)
+                    {
+                        bool notExistingMatch = true;
+                        Match match = null;
+                        if (currentlyUserToMatch.ContainsKey(Regex(postedBy)))
                         {
-                            match.replays.Add("https://" + link);
-                            match.finished = true;
+                            foreach (Match currentMatch in currentlyUserToMatch[Regex(postedBy)])
+                            {
+                                if (nameUserTranslation[currentMatch.firstUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.firstUser + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[currentMatch.firstUser] + " "))
+                                {
+                                    match = currentMatch;
+                                    notExistingMatch = false;
+                                    break;
+                                }
+                                if (currentMatch.secondUser != null && nameUserTranslation[currentMatch.secondUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.secondUser + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[currentMatch.secondUser] + " "))
+                                {
+                                    match = currentMatch;
+                                    notExistingMatch = false;
+                                    break;
+                                }
+                            }
                         }
-                        if (arrow < quot)
+                        if (notExistingMatch)
                         {
-                            tempLine = tempLine.Substring(tempLine.IndexOf("<"));
+                            match = new Match
+                            {
+                                firstUser = nameUserTranslation[Regex(postedBy)].name,
+                                thread = thread,
+                                finished = true,
+                            };
+
+
+                            // Order by name length of the users so that short common terms are ignored longer and bigger names can be respected
+                            users = users.OrderByDescending(u => u.name.Length).ToList();
+
+                            foreach (User user in users)
+                            {
+                                if (user != nameUserTranslation[match.firstUser] && (regexWithSpaceFullPost.Contains(" " + user.name + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[user.name] + " ")))
+                                {
+                                    match.secondUser = user.name;
+                                    break;
+                                }
+                            }
+                            match.postDate = postDate;
+                            nameUserTranslation[match.firstUser].matches.Add(match);
+                            if (match.secondUser != null)
+                            {
+                                nameUserTranslation[match.secondUser].matches.Add(match);
+                            }
                         }
-                        else
+
+                        string tempLine = fullPostString;
+                        while (tempLine.Contains("replay.pokemonshowdown.com/"))
                         {
-                            tempLine = tempLine.Substring(tempLine.IndexOf("\""));
+                            tempLine = tempLine.Substring(tempLine.IndexOf("replay.pokemonshowdown.com/"));
+                            int quot = tempLine.Contains("\"") ? tempLine.IndexOf("\"") : int.MaxValue;
+                            int arrow = tempLine.Contains("<") ? tempLine.IndexOf("<") : int.MaxValue;
+                            string link;
+                            if (arrow < quot)
+                            {
+                                link = tempLine.Substring(0, tempLine.IndexOf("<"));
+                            }
+                            else
+                            {
+                                link = tempLine.Substring(0, tempLine.IndexOf("\""));
+                            }
+                            if (!match.replays.Contains("https://" + link))
+                            {
+                                match.replays.Add("https://" + link);
+                                match.finished = true;
+                            }
+                            if (arrow < quot)
+                            {
+                                tempLine = tempLine.Substring(tempLine.IndexOf("<"));
+                            }
+                            else
+                            {
+                                tempLine = tempLine.Substring(tempLine.IndexOf("\""));
+                            }
                         }
                     }
                 }
