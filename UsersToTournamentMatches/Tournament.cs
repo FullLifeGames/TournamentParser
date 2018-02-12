@@ -342,7 +342,7 @@ namespace UsersToTournamentMatches
                     if (fullPostString.Contains("replay.pokemonshowdown.com/") && postNumber != 1)
                     {
                         bool notExistingMatch = true;
-                        Match match = null;
+                        Match match = new Match();
                         if (currentlyUserToMatch.ContainsKey(Regex(postedBy)))
                         {
                             foreach (Match currentMatch in currentlyUserToMatch[Regex(postedBy)])
@@ -365,64 +365,64 @@ namespace UsersToTournamentMatches
                                 match = currentlyUserToMatch[Regex(postedBy)][0];
                                 notExistingMatch = false;
                             }
-                        }
-                        if (notExistingMatch)
-                        {
-                            match = new Match
+                            if (notExistingMatch)
                             {
-                                firstUser = nameUserTranslation[Regex(postedBy)].name,
-                                thread = thread,
-                                finished = true,
-                            };
-
-
-                            // Order by name length of the users so that short common terms are ignored longer and bigger names can be respected
-                            users = users.OrderByDescending(u => u.name.Length).ToList();
-
-                            foreach (User user in users)
-                            {
-                                if (user != nameUserTranslation[match.firstUser] && (regexWithSpaceFullPost.Contains(" " + user.name + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[user.name] + " ")))
+                                match = new Match
                                 {
-                                    match.secondUser = user.name;
-                                    notExistingMatch = false;
-                                    break;
+                                    firstUser = nameUserTranslation[Regex(postedBy)].name,
+                                    thread = thread,
+                                    finished = true,
+                                };
+
+
+                                // Order by name length of the users so that short common terms are ignored longer and bigger names can be respected
+                                users = users.OrderByDescending(u => u.name.Length).ToList();
+
+                                foreach (User user in users)
+                                {
+                                    if (user != nameUserTranslation[match.firstUser] && (regexWithSpaceFullPost.Contains(" " + user.name + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[user.name] + " ")))
+                                    {
+                                        match.secondUser = user.name;
+                                        notExistingMatch = false;
+                                        break;
+                                    }
+                                }
+                                match.postDate = postDate;
+                                nameUserTranslation[match.firstUser].matches.Add(match);
+                                if (match.secondUser != null)
+                                {
+                                    nameUserTranslation[match.secondUser].matches.Add(match);
                                 }
                             }
-                            match.postDate = postDate;
-                            nameUserTranslation[match.firstUser].matches.Add(match);
-                            if (match.secondUser != null)
+                            
+                            string tempLine = fullPostString;
+                            while (tempLine.Contains("replay.pokemonshowdown.com/"))
                             {
-                                nameUserTranslation[match.secondUser].matches.Add(match);
-                            }
-                        }
-
-                        string tempLine = fullPostString;
-                        while (tempLine.Contains("replay.pokemonshowdown.com/"))
-                        {
-                            tempLine = tempLine.Substring(tempLine.IndexOf("replay.pokemonshowdown.com/"));
-                            int quot = tempLine.Contains("\"") ? tempLine.IndexOf("\"") : int.MaxValue;
-                            int arrow = tempLine.Contains("<") ? tempLine.IndexOf("<") : int.MaxValue;
-                            string link;
-                            if (arrow < quot)
-                            {
-                                link = tempLine.Substring(0, tempLine.IndexOf("<"));
-                            }
-                            else
-                            {
-                                link = tempLine.Substring(0, tempLine.IndexOf("\""));
-                            }
-                            if (!match.replays.Contains("https://" + link))
-                            {
-                                match.replays.Add("https://" + link);
-                                match.finished = true;
-                            }
-                            if (arrow < quot)
-                            {
-                                tempLine = tempLine.Substring(tempLine.IndexOf("<"));
-                            }
-                            else
-                            {
-                                tempLine = tempLine.Substring(tempLine.IndexOf("\""));
+                                tempLine = tempLine.Substring(tempLine.IndexOf("replay.pokemonshowdown.com/"));
+                                int quot = tempLine.Contains("\"") ? tempLine.IndexOf("\"") : int.MaxValue;
+                                int arrow = tempLine.Contains("<") ? tempLine.IndexOf("<") : int.MaxValue;
+                                string link;
+                                if (arrow < quot)
+                                {
+                                    link = tempLine.Substring(0, tempLine.IndexOf("<"));
+                                }
+                                else
+                                {
+                                    link = tempLine.Substring(0, tempLine.IndexOf("\""));
+                                }
+                                if (!match.replays.Contains("https://" + link))
+                                {
+                                    match.replays.Add("https://" + link);
+                                    match.finished = true;
+                                }
+                                if (arrow < quot)
+                                {
+                                    tempLine = tempLine.Substring(tempLine.IndexOf("<"));
+                                }
+                                else
+                                {
+                                    tempLine = tempLine.Substring(tempLine.IndexOf("\""));
+                                }
                             }
                         }
                     }
