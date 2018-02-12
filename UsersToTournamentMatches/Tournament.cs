@@ -30,14 +30,14 @@ namespace UsersToTournamentMatches
             client.Encoding = Encoding.UTF8;
         }
 
-        private static Regex rgx = new Regex("[^a-zA-Z0-9]");
+        private static Regex rgx = new Regex("[, ]");
         private static string Regex(string toFilter)
         {
             toFilter = rgx.Replace(toFilter, "");
             return toFilter.ToLower();
         }
 
-        private static Regex rgxWithSpace = new Regex("[^a-zA-Z0-9 ]");
+        private static Regex rgxWithSpace = new Regex("[,]");
         private static string RegexWithSpace(string toFilter)
         {
             toFilter = rgxWithSpace.Replace(toFilter, "");
