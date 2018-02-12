@@ -379,6 +379,7 @@ namespace UsersToTournamentMatches
                                 if (user != nameUserTranslation[match.firstUser] && (regexWithSpaceFullPost.Contains(" " + user.name + " ") || regexWithSpaceFullPost.Contains(" " + userWithSpaceTranslation[user.name] + " ")))
                                 {
                                     match.secondUser = user.name;
+                                    notExistingMatch = false;
                                     break;
                                 }
                             }
@@ -388,6 +389,11 @@ namespace UsersToTournamentMatches
                             {
                                 nameUserTranslation[match.secondUser].matches.Add(match);
                             }
+                        }
+                        if (notExistingMatch && currentlyUserToMatch[Regex(postedBy)].Count == 1)
+                        {
+                            match = currentlyUserToMatch[Regex(postedBy)][0];
+                            notExistingMatch = false;
                         }
 
                         string tempLine = fullPostString;
