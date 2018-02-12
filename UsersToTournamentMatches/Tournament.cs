@@ -230,7 +230,6 @@ namespace UsersToTournamentMatches
             {
                 Console.WriteLine("WebException bei: " + url);
                 Console.WriteLine(e.Message);
-                Console.ReadLine();
             }
         }
 
