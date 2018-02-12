@@ -360,11 +360,11 @@ namespace UsersToTournamentMatches
                                     break;
                                 }
                             }
-                        }
-                        if (notExistingMatch && currentlyUserToMatch[Regex(postedBy)].Count == 1)
-                        {
-                            match = currentlyUserToMatch[Regex(postedBy)][0];
-                            notExistingMatch = false;
+                            if (notExistingMatch && currentlyUserToMatch[Regex(postedBy)].Count == 1)
+                            {
+                                match = currentlyUserToMatch[Regex(postedBy)][0];
+                                notExistingMatch = false;
+                            }
                         }
                         if (notExistingMatch)
                         {
@@ -459,7 +459,7 @@ namespace UsersToTournamentMatches
 
                 string toFilterFor = "vs";
 
-                if(line.Contains(" vs. "))
+                if(StripHTML(line).Contains(" vs. "))
                 {
                     toFilterFor = "vs.";
                 }
@@ -574,6 +574,53 @@ namespace UsersToTournamentMatches
 
                     match.thread = thread;
                     match.postDate = postDate;
+                }
+                
+                Match toKeep = null;
+                Match toLoose = null;
+                foreach (Match otherMatch in nameUserTranslation[match.firstUser].matches)
+                {
+                    if(otherMatch != match)
+                    {
+                        if(otherMatch.firstUser == match.firstUser && otherMatch.secondUser == match.secondUser)
+                        {
+                            // A week between the matches post date is apart => VERY strong correlation, so assuming they are the same matches
+                            if (otherMatch.postDate.AddDays(7) <= match.postDate && otherMatch.postDate.AddDays(-7) >= match.postDate)
+                            {
+                                if(otherMatch.postDate > match.postDate)
+                                {
+                                    toKeep = match;
+                                    toLoose = otherMatch;
+                                }
+                                else
+                                {
+                                    toKeep = otherMatch;
+                                    toLoose = match;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                if(toKeep != null && toLoose != null)
+                {
+                    foreach (string replay in toLoose.replays)
+                    {
+                        if (!toKeep.replays.Contains(replay))
+                        {
+                            toKeep.replays.Add(replay);
+                        }
+                    }
+                    if(toKeep.winner == null && toLoose.winner != null)
+                    {
+                        toKeep.winner = toLoose.winner;
+                    }
+                    nameUserTranslation[toKeep.firstUser].matches.Remove(toLoose);
+                    nameUserTranslation[toKeep.secondUser].matches.Remove(toLoose);
+                    currentlyUserToMatch[toKeep.firstUser].Remove(toLoose);
+                    currentlyUserToMatch[toKeep.firstUser].Add(toKeep);
+                    currentlyUserToMatch[toKeep.secondUser].Remove(toLoose);
+                    currentlyUserToMatch[toKeep.secondUser].Add(toKeep);
                 }
 
             }
