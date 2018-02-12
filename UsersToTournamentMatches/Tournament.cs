@@ -361,6 +361,11 @@ namespace UsersToTournamentMatches
                                 }
                             }
                         }
+                        if (notExistingMatch && currentlyUserToMatch[Regex(postedBy)].Count == 1)
+                        {
+                            match = currentlyUserToMatch[Regex(postedBy)][0];
+                            notExistingMatch = false;
+                        }
                         if (notExistingMatch)
                         {
                             match = new Match
@@ -389,11 +394,6 @@ namespace UsersToTournamentMatches
                             {
                                 nameUserTranslation[match.secondUser].matches.Add(match);
                             }
-                        }
-                        if (notExistingMatch && currentlyUserToMatch[Regex(postedBy)].Count == 1)
-                        {
-                            match = currentlyUserToMatch[Regex(postedBy)][0];
-                            notExistingMatch = false;
                         }
 
                         string tempLine = fullPostString;
