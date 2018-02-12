@@ -235,7 +235,11 @@ namespace UsersToTournamentMatches
 
         private void HandleLine(string url, int pageCount, ref bool blockStarted, ref string blockText, ref bool postStarted, ref int postNumber, ref string postLink, ref int postLikes, ref DateTime postDate, ref string postedBy, ref bool likeStarted, ref bool timerHeader, List<string> currentTeams, string line, ref string lastLine, ref bool canTakeReplay, ref int dataUserId, ref string userLink, Thread thread, Dictionary<string, List<Match>> currentlyUserToMatch, ref StringBuilder fullPost, ref bool takePost)
         {
-            if(line.Contains("<h1 class=\"p-title-value\">"))
+            if(line.Contains("\"articleBody\": \""))
+            {
+
+            }
+            else if(line.Contains("<h1 class=\"p-title-value\">"))
             {
                 thread.name = line.Substring(0, line.LastIndexOf("<"));
                 thread.name = thread.name.Substring(thread.name.LastIndexOf(">") + 1);
@@ -447,7 +451,7 @@ namespace UsersToTournamentMatches
                 postedBy = postedBy.Substring(postedBy.IndexOf("\"") + 1);
                 postedBy = postedBy.Substring(0, postedBy.IndexOf("\""));
             }
-            else if ((StripHTML(line).Contains(" vs. ") || StripHTML(line).Contains(" vs ")) && (postNumber == 1 || postNumber == 2))
+            else if ((StripHTML(line).Contains(" vs. ") || StripHTML(line).Contains(" vs ")) && (postNumber == 1 || postNumber == 2 || url.Contains("-replay")))
             {
                 Match match = new Match();
 
@@ -584,7 +588,7 @@ namespace UsersToTournamentMatches
                         if(otherMatch.firstUser == match.firstUser && otherMatch.secondUser == match.secondUser)
                         {
                             // A week between the matches post date is apart => VERY strong correlation, so assuming they are the same matches
-                            if (otherMatch.postDate.AddDays(7) <= match.postDate && otherMatch.postDate.AddDays(-7) >= match.postDate)
+                            if (otherMatch.postDate.AddDays(7) >= match.postDate && otherMatch.postDate.AddDays(-7) <= match.postDate)
                             {
                                 if(otherMatch.postDate > match.postDate)
                                 {
