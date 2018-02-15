@@ -621,9 +621,15 @@ namespace UsersToTournamentMatches
                     nameUserTranslation[toKeep.firstUser].matches.Remove(toLoose);
                     nameUserTranslation[toKeep.secondUser].matches.Remove(toLoose);
                     currentlyUserToMatch[toKeep.firstUser].Remove(toLoose);
-                    currentlyUserToMatch[toKeep.firstUser].Add(toKeep);
+                    if (!currentlyUserToMatch[toKeep.firstUser].Contains(toKeep))
+                    {
+                        currentlyUserToMatch[toKeep.firstUser].Add(toKeep);
+                    }
                     currentlyUserToMatch[toKeep.secondUser].Remove(toLoose);
-                    currentlyUserToMatch[toKeep.secondUser].Add(toKeep);
+                    if (!currentlyUserToMatch[toKeep.secondUser].Contains(toKeep))
+                    {
+                        currentlyUserToMatch[toKeep.secondUser].Add(toKeep);
+                    }
                 }
 
             }
