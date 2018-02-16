@@ -467,7 +467,7 @@ namespace UsersToTournamentMatches
                     toFilterFor = "vs.";
                 }
 
-                string preparedLine = FilterOutTierDefinition(StripHTML(FilterBannedTerms(line)));
+                string preparedLine = FilterOutTierDefinition(StripHTML(line));
 
                 if (preparedLine != toFilterFor && preparedLine.Contains(" " + toFilterFor + " "))
                 {
@@ -639,11 +639,6 @@ namespace UsersToTournamentMatches
             }
         }
 
-        private string FilterBannedTerms(string v)
-        {
-            return v.Replace("(activity)", "");
-        }
-
         private string FilterOutTierDefinition(string line)
         {
             string tempLine = line;
@@ -656,9 +651,10 @@ namespace UsersToTournamentMatches
 
         private Regex htmlRegex = new Regex("<.*?>");
         private Regex eckigRegex = new Regex("\\[.*?\\]");
+        private Regex rundRegex = new Regex("\\(.*?\\)");
         private string StripHTML(string inputString)
         {
-            return eckigRegex.Replace(htmlRegex.Replace(inputString, ""), "").Trim();
+            return rundRegex.Replace(eckigRegex.Replace(htmlRegex.Replace(inputString, ""), ""), "").Trim();
         }
     }
 }
