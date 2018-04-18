@@ -44,6 +44,17 @@ namespace UsersToTournamentMatches
             return toFilter.ToLower();
         }
 
+        private static Regex rgxWithAbc = new Regex("[^a-zA-Z0-9]");
+        private static string RegexWithABC(string toFilter)
+        {
+            if (toFilter.Contains(" "))
+            {
+                toFilter = toFilter.Substring(0, toFilter.LastIndexOf(" "));
+            }
+            toFilter = rgxWithAbc.Replace(toFilter, "");
+            return toFilter.ToLower();
+        }
+
         public Dictionary<string, List<string>> GetThreadsForForums()
         {
             Dictionary<string, string> tournamentToLinks = new Dictionary<string, string>();
@@ -142,7 +153,7 @@ namespace UsersToTournamentMatches
         public Dictionary<string, User> GetMatchesForUsers()
         {
             Dictionary<string, List<string>> threadsForForums = GetThreadsForForums();
-
+            
             int totalCount = 0;
             foreach (KeyValuePair<string, List<string>> kv in threadsForForums)
             {
@@ -159,6 +170,28 @@ namespace UsersToTournamentMatches
                     int afterCount = users.Count;
                     Console.WriteLine("Added " + (afterCount - beforeCount) + " Users");
                     Console.WriteLine();
+                }
+            }
+
+            foreach(User user in nameUserTranslation.Values)
+            {
+                //user.matches.Sort((m1, m2) => m1.postDate.CompareTo(m2));
+                foreach(Match match in user.matches)
+                {
+                    if (match.winner == null)
+                    {
+                        string threadName = RegexWithABC(match.thread.name);
+                        foreach (Match matchCompare in user.matches)
+                        {
+                            if(match != matchCompare && threadName == RegexWithABC(matchCompare.thread.name))
+                            {
+                                if(match.postDate < matchCompare.postDate)
+                                {
+                                    match.winner = user.name;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
