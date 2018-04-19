@@ -188,6 +188,7 @@ namespace UsersToTournamentMatches
                                 if(match.postDate < matchCompare.postDate)
                                 {
                                     match.winner = user.name;
+                                    match.finished = true;
                                 }
                             }
                         }
