@@ -6,10 +6,85 @@
   <title>Match Checker</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
-  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
-  <script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
-
+  <link rel="stylesheet" href="/css/bootstrap.min.css">
+  <script src="/js/jquery.min.js"></script>
+  <script src="/js/bootstrap.min.js"></script>
+	<script type="text/javascript" nonce="sUFxWeHDPtMYm5wT0OVeD6k5Qxx0gtTshGwxU4Re8Fs">
+		$(function(){
+			
+			function calculateNewWinrate(){
+				var teams = $('.tofilter:visible');
+				
+				var name = $('#name').text().replace(/[, ]/g, "").toLowerCase();
+				var winrate = "Not defined";
+				var wonMatches = 0;
+				var doneMatches = 0;
+				for(var i=0;i<teams.length;i++) {
+					var team = teams.eq(i);
+					var teamdump = team.children().eq(0);
+					if(teamdump != undefined){
+						var winner = teamdump.find("b").text();	
+						if(winner != "" && winner != "ACTIVE"){
+							if(winner == name){
+								wonMatches++;
+							}
+							doneMatches++;
+						}
+					}
+				}
+				
+				if(doneMatches > 0){
+					var winPercentage = (wonMatches / doneMatches) * 100;
+					winrate = winPercentage.toFixed(2) + "%";
+				}
+				$('#winrate').html(winrate);
+			}
+			
+			$('#filter').change(function(){
+				var value = $('#filter').val();
+				
+				var tours = value.split("|");
+				for(var i=0;i<tours.length;i++) {
+					tours[i] = tours[i].split(",");
+					
+					for(var j=0;j<tours[i].length;j++) {						
+						tours[i][j] = tours[i][j].trim();
+						tours[i][j] = tours[i][j].toLowerCase();
+					}
+				}
+				
+				var teams = $('.tofilter');
+				for(var i=0;i<teams.length;i++) {
+					var team = teams.eq(i);
+					var teamdump = team.children().eq(0);
+					teamdump = teamdump.html().replace(/<.*?>/g, "");
+					if(teamdump != undefined){
+						teamdump = teamdump.toLowerCase();
+						var matches = false;
+						for(var j=0;j<tours.length;j++) {
+							var tempMatches = true;
+							$.each(tours[j], function(key2, mon) {
+								if(teamdump.indexOf(mon) === -1){
+									tempMatches = false;
+								}
+							});
+							matches = matches || tempMatches;
+						}
+						if(matches || tours.length == 0){
+							team.show();
+						} else {
+							team.hide();
+						}
+					}
+				}
+				calculateNewWinrate();
+			});
+			
+			calculateNewWinrate();
+		});
+	</script>
+  
+  
 <style>
 
 a {
@@ -40,6 +115,7 @@ a {
 		<hr />
 		
 		<?php
+			date_default_timezone_set("UTC");
 			function matchesSort($a, $b) {
 				return strtotime($a->postDate) <= strtotime($b->postDate);
 			}
@@ -48,8 +124,8 @@ a {
 				$json = json_decode(file_get_contents("output.json"));
 				
 				$user = strtolower(preg_replace("/[, ]/", "", $_POST["user"]));
-				echo '<h2 style="text-align:center;">' . trim(htmlentities($_POST["user"])) . ":</h2><hr>";
-
+				echo '<h2 style="text-align:center;"><name id="name">' . trim(htmlentities($_POST["user"])) . "</name>";				
+				
 				$matchesKey = "matches";
 				
 				if(isset($json->$user))
@@ -57,6 +133,25 @@ a {
 					$userAccess = $json->$user;
 					$matches = $userAccess->$matchesKey;
 					usort($matches, 'matchesSort');
+					
+					$matchesCount = 0;
+					$wonCount = 0;
+					foreach($matches as $match){
+						if($match->winner != null){
+							$matchesCount++;
+							if($match->winner == $user){
+								$wonCount++;
+							}
+						}
+					}
+					
+					if($matchesCount > 0){
+						echo " (Winrate: <winrate id='winrate'>" . round((($wonCount / $matchesCount) * 100), 2) . "%</winrate>)";
+					}
+					
+					echo ":</h2><hr>";
+					echo '<input type="text" id="filter" placeholder="Tournament or user filter (e.g. \'Smogon Premier League, Official Smogon Tournament | FullLifeGames\')" class="form-control" /><hr>';
+					
 					foreach($matches as $match){
 						
 						echo '<div class="panel panel-default tofilter">
@@ -112,6 +207,8 @@ a {
 						  echo "</div>";
 						
 					}
+				} else {
+					echo ":</h2><hr>";
 				}
 			}
 
