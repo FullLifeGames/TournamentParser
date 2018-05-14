@@ -91,7 +91,9 @@ namespace UsersToTournamentMatches
             {
                 tournamentToLinks.Add("Official Smogon Tournament", ostForum);
             }
-            if (!tournamentToLinks.ContainsKey("Circuit Tournaments"))
+        /*        
+         *  Removed cause included by Smogon Metagames Scan
+         *  if (!tournamentToLinks.ContainsKey("Circuit Tournaments"))
             {
                 tournamentToLinks.Add("Circuit Tournaments", circuitTournaments);
             }
@@ -99,6 +101,7 @@ namespace UsersToTournamentMatches
             {
                 tournamentToLinks.Add("Team Tournaments", teamTournaments);
             }
+        */
             tournamentToLinks.Add("Standard Tournament Forums", officialTournamentSite);
 
             Dictionary<string, List<string>> threadsForForums = new Dictionary<string, List<string>>();
@@ -149,13 +152,97 @@ namespace UsersToTournamentMatches
             return threadsForForums;
         }
 
+        public Dictionary<string, List<string>> GetNonTourThreadsForForums()
+        {
+            Dictionary<string, string> tournamentToLinks = new Dictionary<string, string>();
+            string smogonMain = client.DownloadString("http://www.smogon.com/forums/");
+            bool scanStartOne = false;
+
+            foreach (string line in smogonMain.Split('\n'))
+            {
+                if (scanStartOne)
+                {
+                    if (line.Contains("class=\"subNodeLink subNodeLink--forum"))
+                    {
+                        string tourName = line.Substring(line.IndexOf(">") + 1);
+                        tourName = tourName.Substring(0, tourName.IndexOf("<"));
+
+                        string tourUrl = line.Substring(line.IndexOf("\"") + 1);
+                        tourUrl = tourUrl.Substring(0, tourUrl.IndexOf("\""));
+                        tourUrl = "http://www.smogon.com" + tourUrl;
+
+                        tournamentToLinks.Add(tourName, tourUrl);
+                    }
+                    else if (line.Contains("node-stats\""))
+                    {
+                        scanStartOne = false;
+                    }
+                }
+                else if (line.Contains(">Smogon Metagames<"))
+                {
+                    scanStartOne = true;
+                }
+            }
+
+            Dictionary<string, List<string>> threadsForForums = new Dictionary<string, List<string>>();
+            foreach (KeyValuePair<string, string> kv in tournamentToLinks)
+            {
+                threadsForForums.Add(kv.Value, new List<string>());
+                string site = client.DownloadString(kv.Value);
+                int pages = 1;
+                if (site.Contains("<nav class=\"pageNavWrapper"))
+                {
+                    string temp = site;
+                    while (temp.Contains("pageNav-page"))
+                    {
+                        temp = temp.Substring(temp.IndexOf("pageNav-page") + "pageNav-page".Length);
+                    }
+                    temp = temp.Substring(temp.IndexOf(">") + 1);
+                    temp = temp.Substring(temp.IndexOf(">") + 1);
+                    temp = temp.Substring(0, temp.IndexOf("<"));
+                    pages = int.Parse(temp);
+                }
+
+                Console.WriteLine("Looking for scannable tournament threads in: " + kv.Value);
+                int beforeCount = threadsForForums[kv.Value].Count;
+                for (int pageCount = 1; pageCount <= pages; pageCount++)
+                {
+                    site = client.DownloadString(kv.Value + "page-" + pageCount);
+
+                    foreach (string line in site.Split('\n'))
+                    {
+                        if (line.Contains("data-preview-url") && ((line.Contains("pl-") && line.Contains("-week-")) || line.Contains("-replay") || line.Contains("premier-league")))
+                        {
+                            string tempInside = line.Substring(line.IndexOf("data-preview-url") + "data-preview-url".Length);
+                            tempInside = tempInside.Substring(tempInside.IndexOf("\"") + 1);
+                            if (!tempInside.Contains("/preview"))
+                            {
+                                continue;
+                            }
+                            tempInside = tempInside.Substring(0, tempInside.IndexOf("/preview") + 1);
+                            string url = "http://www.smogon.com" + tempInside;
+                            threadsForForums[kv.Value].Add(url);
+                        }
+                    }
+                }
+                int afterCount = threadsForForums[kv.Value].Count;
+                Console.WriteLine("Found " + (afterCount - beforeCount) + " scannable tournament threads in: " + kv.Value);
+                Console.WriteLine();
+            }
+            return threadsForForums;
+        }
 
         public Dictionary<string, User> GetMatchesForUsers()
         {
             Dictionary<string, List<string>> threadsForForums = GetThreadsForForums();
-            
+            Dictionary<string, List<string>> nonTourThreadsForForums = GetNonTourThreadsForForums();
+
             int totalCount = 0;
             foreach (KeyValuePair<string, List<string>> kv in threadsForForums)
+            {
+                totalCount += kv.Value.Count;
+            }
+            foreach (KeyValuePair<string, List<string>> kv in nonTourThreadsForForums)
             {
                 totalCount += kv.Value.Count;
             }
@@ -173,7 +260,20 @@ namespace UsersToTournamentMatches
                 }
             }
 
-            foreach(User user in nameUserTranslation.Values)
+            foreach (KeyValuePair<string, List<string>> kv in nonTourThreadsForForums)
+            {
+                foreach (string url in kv.Value)
+                {
+                    Console.WriteLine("Currently Scanning: " + url);
+                    int beforeCount = users.Count;
+                    AnalyzeTopic(url, client);
+                    int afterCount = users.Count;
+                    Console.WriteLine("Added " + (afterCount - beforeCount) + " Users");
+                    Console.WriteLine();
+                }
+            }
+
+            foreach (User user in nameUserTranslation.Values)
             {
                 //user.matches.Sort((m1, m2) => m1.postDate.CompareTo(m2));
                 foreach(Match match in user.matches)
