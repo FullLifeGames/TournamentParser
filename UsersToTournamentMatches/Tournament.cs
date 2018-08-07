@@ -721,8 +721,8 @@ namespace UsersToTournamentMatches
                     {
                         if(otherMatch.firstUser == match.firstUser && otherMatch.secondUser == match.secondUser)
                         {
-                            // A week between the matches post date is apart => VERY strong correlation, so assuming they are the same matches
-                            if (otherMatch.postDate.AddDays(7) >= match.postDate && otherMatch.postDate.AddDays(-7) <= match.postDate)
+                            // A week between the matches post date is apart => VERY strong correlation, so assuming they are the same matches (or replays are the same => so probably the same game)
+                            if ((otherMatch.postDate.AddDays(7) >= match.postDate && otherMatch.postDate.AddDays(-7) <= match.postDate) || (otherMatch.replays.Count > 0 && otherMatch.replays.SequenceEqual(match.replays)))
                             {
                                 if(otherMatch.postDate > match.postDate)
                                 {
