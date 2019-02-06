@@ -393,7 +393,7 @@ namespace UsersToTournamentMatches
                 postNumber++;
                 canTakeReplay = true;
             }
-            else if (line.Contains("<header class=\"message-attribution\">"))
+            else if (line.Contains("<header class=\"message-attribution message-attribution--split\">"))
             {
                 timerHeader = true;
             }
