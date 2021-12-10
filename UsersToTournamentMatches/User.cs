@@ -1,25 +1,21 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Collections.Generic;
 
 namespace UsersToTournamentMatches
 {
-    class User
+    public class User
     {
 
-        public int id = -1;
-        public String name = null;
-        public String profileLink = null;
-        public String normalName = null;
-        public List<Match> matches = new List<Match>();
+        public int Id { get; set; } = -1;
+        public string Name { get; set; }
+        public string ProfileLink { get; set; }
+        public string NormalName { get; set; }
+        public ICollection<Match> Matches { get; set; } = new List<Match>();
 
         public override string ToString()
         {
-            string output = "The user '" + ((name == null) ? "" : name) + "' with the id " + id + " has the following matches:\r\n";
+            var output = $"The user '{Name ?? ""}' with the id {Id} has the following matches:\r\n";
 
-            foreach(Match match in matches)
+            foreach(var match in Matches)
             {
                 output += match + "\r\n";
             }
