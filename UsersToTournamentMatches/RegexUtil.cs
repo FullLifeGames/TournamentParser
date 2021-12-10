@@ -30,5 +30,13 @@ namespace UsersToTournamentMatches
             return toFilter.ToLower();
         }
 
+        private readonly Regex htmlRegex = new("<.*?>");
+        private readonly Regex eckigRegex = new("\\[.*?\\]");
+        private readonly Regex rundRegex = new("\\(.*?\\)");
+        public string StripHTML(string inputString)
+        {
+            return rundRegex.Replace(eckigRegex.Replace(htmlRegex.Replace(inputString, ""), ""), "").Trim();
+        }
+
     }
 }

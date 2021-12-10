@@ -6,7 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
-using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace UsersToTournamentMatches
@@ -17,17 +17,13 @@ namespace UsersToTournamentMatches
         private readonly RegexUtil _regexUtil;
 
         private readonly string officialTournamentSite = "http://www.smogon.com/forums/forums/tournaments.34/";
-        private readonly string ostForum = "http://www.smogon.com/forums/forums/official-smogon-tournament.463/";
 
-        private string circuitTournaments = "http://www.smogon.com/forums/forums/circuit-tournaments.351/";
-        private string teamTournaments = "http://www.smogon.com/forums/forums/team-tournaments.468/";
+        private readonly ConcurrentBag<User> users = new();
+        private readonly IDictionary<string, User> nameUserTranslation = new ConcurrentDictionary<string, User>();
+        private readonly IDictionary<int, User> idUserTranslation = new ConcurrentDictionary<int, User>();
+        private readonly IDictionary<string, string> userWithSpaceTranslation = new ConcurrentDictionary<string, string>();
 
-        private ConcurrentBag<User> users = new();
-        private readonly Dictionary<string, User> nameUserTranslation = new Dictionary<string, User>();
-        private readonly Dictionary<int, User> idUserTranslation = new Dictionary<int, User>();
-        private readonly Dictionary<string, string> userWithSpaceTranslation = new Dictionary<string, string>();
-
-        public Tournament(HttpClient httpClient = null)
+        public Tournament(HttpClient? httpClient = null)
         {
             if (httpClient != null)
             {
@@ -40,7 +36,7 @@ namespace UsersToTournamentMatches
             _regexUtil = new RegexUtil();
         }
 
-        public async Task<Dictionary<string, User>> GetMatchesForUsers()
+        public async Task<IDictionary<string, User>> GetMatchesForUsers()
         {
             var threadsForForums = await GetThreadsForForums();
             var nonTourThreadsForForums = await GetNonTourThreadsForForums();
@@ -54,6 +50,7 @@ namespace UsersToTournamentMatches
 
             foreach (var user in nameUserTranslation.Values)
             {
+                user.Matches = new ConcurrentBag<Match>(user.Matches.Where((match) => !match.Irrelevant));
                 foreach (var match in user.Matches)
                 {
                     if (match.Winner == null)
@@ -78,7 +75,7 @@ namespace UsersToTournamentMatches
 
         }
 
-        public async Task<Dictionary<string, List<string>>> GetGeneralThreadsForForums(
+        public async Task<IDictionary<string, List<string>>> GetGeneralThreadsForForums(
             string filter, Dictionary<string, string> additionals = null)
         {
             var tournamentToLinks = new Dictionary<string, string>();
@@ -105,7 +102,7 @@ namespace UsersToTournamentMatches
                         scanStartOne = false;
                     }
                 }
-                else if (line.Contains($">{ filter }< "))
+                else if (line.Contains($">{ filter }<"))
                 {
                     scanStartOne = true;
                 }
@@ -122,69 +119,71 @@ namespace UsersToTournamentMatches
                 }
             }
 
-            var threadsForForums = new Dictionary<string, List<string>>();
-            foreach (var kv in tournamentToLinks)
-            {
-                threadsForForums.Add(kv.Value, new List<string>());
-                var site = await _client.GetStringAsync(kv.Value);
-                var pages = 1;
-                if (site.Contains("<nav class=\"pageNavWrapper"))
-                {
-                    var temp = site;
-                    while (temp.Contains("pageNav-page"))
-                    {
-                        temp = temp.Substring(temp.IndexOf("pageNav-page") + "pageNav-page".Length);
-                    }
-                    temp = temp.Substring(temp.IndexOf(">") + 1);
-                    temp = temp.Substring(temp.IndexOf(">") + 1);
-                    temp = temp.Substring(0, temp.IndexOf("<"));
-                    pages = int.Parse(temp);
-                }
+            IDictionary<string, List<string>> threadsForForums = new ConcurrentDictionary<string, List<string>>();
 
-                Console.WriteLine("Looking for scannable tournament threads in: " + kv.Value);
-                var beforeCount = threadsForForums[kv.Value].Count;
-                for (var pageCount = 1; pageCount <= pages; pageCount++)
+            await Parallel.ForEachAsync(tournamentToLinks, async (kv, ct) =>
                 {
-                    site = await _client.GetStringAsync(kv.Value + "page-" + pageCount);
-
-                    foreach (var line in site.Split('\n'))
+                    threadsForForums.Add(kv.Value, new List<string>());
+                    var site = await _client.GetStringAsync(kv.Value, ct);
+                    var pages = 1;
+                    if (site.Contains("<nav class=\"pageNavWrapper"))
                     {
-                        if (line.Contains("data-preview-url"))
+                        var temp = site;
+                        while (temp.Contains("pageNav-page"))
                         {
-                            var tempInside = line.Substring(line.IndexOf("data-preview-url") + "data-preview-url".Length);
-                            tempInside = tempInside.Substring(tempInside.IndexOf("\"") + 1);
-                            if (!tempInside.Contains("/preview"))
+                            temp = temp.Substring(temp.IndexOf("pageNav-page") + "pageNav-page".Length);
+                        }
+                        temp = temp.Substring(temp.IndexOf(">") + 1);
+                        temp = temp.Substring(temp.IndexOf(">") + 1);
+                        temp = temp.Substring(0, temp.IndexOf("<"));
+                        pages = int.Parse(temp);
+                    }
+
+                    Console.WriteLine("Looking for scannable tournament threads in: " + kv.Value);
+                    var beforeCount = threadsForForums[kv.Value].Count;
+                    for (var pageCount = 1; pageCount <= pages; pageCount++)
+                    {
+                        site = await _client.GetStringAsync(kv.Value + "page-" + pageCount, ct);
+
+                        foreach (var line in site.Split('\n'))
+                        {
+                            if (line.Contains("data-preview-url"))
                             {
-                                continue;
+                                var tempInside = line.Substring(line.IndexOf("data-preview-url") + "data-preview-url".Length);
+                                tempInside = tempInside.Substring(tempInside.IndexOf("\"") + 1);
+                                if (!tempInside.Contains("/preview"))
+                                {
+                                    continue;
+                                }
+                                tempInside = tempInside.Substring(0, tempInside.IndexOf("/preview") + 1);
+                                var url = "http://www.smogon.com" + tempInside;
+                                threadsForForums[kv.Value].Add(url);
                             }
-                            tempInside = tempInside.Substring(0, tempInside.IndexOf("/preview") + 1);
-                            var url = "http://www.smogon.com" + tempInside;
-                            threadsForForums[kv.Value].Add(url);
                         }
                     }
+                    var afterCount = threadsForForums[kv.Value].Count;
+                    Console.WriteLine("Found " + (afterCount - beforeCount) + " scannable tournament threads in: " + kv.Value);
+                    Console.WriteLine();
                 }
-                var afterCount = threadsForForums[kv.Value].Count;
-                Console.WriteLine("Found " + (afterCount - beforeCount) + " scannable tournament threads in: " + kv.Value);
-                Console.WriteLine();
-            }
+            );
+
             return threadsForForums;
         }
 
-        public async Task<Dictionary<string, List<string>>> GetThreadsForForums()
+        public async Task<IDictionary<string, List<string>>> GetThreadsForForums()
         {
             return await GetGeneralThreadsForForums("Tournaments", new Dictionary<string, string>()
             {
-                { "Official Smogon Tournament", ostForum },
                 { "Standard Tournament Forums", officialTournamentSite }
             });
         }
 
-        public async Task<Dictionary<string, List<string>>> GetNonTourThreadsForForums()
+        public async Task<IDictionary<string, List<string>>> GetNonTourThreadsForForums()
         {
             return await GetGeneralThreadsForForums("Smogon Metagames");
         }
 
-        public async Task ScanThreads(Dictionary<string, List<string>> threadsForForums)
+        public async Task ScanThreads(IDictionary<string, List<string>> threadsForForums)
         {
             await Parallel.ForEachAsync(
                 threadsForForums.SelectMany(thread => thread.Value),
@@ -192,7 +191,7 @@ namespace UsersToTournamentMatches
                 {
                     Console.WriteLine("Currently Scanning: " + url);
                     var beforeCount = users.Count;
-                    await AnalyzeTopic(url);
+                    await AnalyzeTopic(url, ct);
                     var afterCount = users.Count;
                     Console.WriteLine("Added " + (afterCount - beforeCount) + " Users on " + url);
                     Console.WriteLine();
@@ -200,11 +199,11 @@ namespace UsersToTournamentMatches
             );
         }
 
-        private async Task AnalyzeTopic(string url)
+        private async Task AnalyzeTopic(string url, CancellationToken ct)
         {
             try
             {
-                var site = await _client.GetStringAsync(url);
+                var site = await _client.GetStringAsync(url, ct);
                 var pages = 1;
                 if (site.Contains("<nav class=\"pageNavWrapper"))
                 {
@@ -221,27 +220,23 @@ namespace UsersToTournamentMatches
 
                 var currentlyUserToMatch = new Dictionary<string, List<Match>>();
                 var thread = new Thread();
-                thread.Link = url;
+                var id = url[(url.LastIndexOf(".")+1)..];
+                if (id.Contains("/"))
+                {
+                    id = id[..id.IndexOf("/")];
+                }
+                thread.Id = id;
                 for (int pageCount = 1; pageCount <= pages; pageCount++)
                 {
-                    site = await _client.GetStringAsync(url + "page-" + pageCount);
-
-                    bool blockStarted = false;
-                    string blockText = "";
+                    site = await _client.GetStringAsync(url + "page-" + pageCount, ct);
 
                     bool postStarted = false;
                     int postNumber = 0 + (pageCount - 1) * 25;
-                    string postLink = "";
-                    int postLikes = 0;
                     DateTime postDate = DateTime.Now;
 
                     string postedBy = "";
 
-                    bool likeStarted = false;
-
                     bool timerHeader = false;
-
-                    string lastLine = "";
 
                     bool canTakeReplay = false;
 
@@ -250,24 +245,22 @@ namespace UsersToTournamentMatches
 
                     StringBuilder fullPost = new StringBuilder("");
 
-                    List<string> currentTeams = new List<string>();
-
                     bool takePost = false;
 
                     foreach (string line in site.Split('\n'))
                     {
-                        HandleLine(url, pageCount, ref blockStarted, ref blockText, ref postStarted, ref postNumber, ref postLink, ref postLikes, ref postDate, ref postedBy, ref likeStarted, ref timerHeader, currentTeams, line, ref lastLine, ref canTakeReplay, ref dataUserId, ref userLink, thread, currentlyUserToMatch, ref fullPost, ref takePost);
+                        HandleLine(url, ref postStarted, ref postNumber, ref postDate, ref postedBy, ref timerHeader, line, ref canTakeReplay, ref dataUserId, ref userLink, thread, currentlyUserToMatch, ref fullPost, ref takePost);
                     }
                 }
             }
-            catch (WebException e)
+            catch (HttpRequestException e)
             {
-                Console.WriteLine("WebException bei: " + url);
+                Console.WriteLine("HttpRequestException bei: " + url);
                 Console.WriteLine(e.Message);
             }
         }
 
-        private void HandleLine(string url, int pageCount, ref bool blockStarted, ref string blockText, ref bool postStarted, ref int postNumber, ref string postLink, ref int postLikes, ref DateTime postDate, ref string postedBy, ref bool likeStarted, ref bool timerHeader, List<string> currentTeams, string line, ref string lastLine, ref bool canTakeReplay, ref int dataUserId, ref string userLink, Thread thread, Dictionary<string, List<Match>> currentlyUserToMatch, ref StringBuilder fullPost, ref bool takePost)
+        private void HandleLine(string url, ref bool postStarted, ref int postNumber, ref DateTime postDate, ref string postedBy, ref bool timerHeader, string line, ref bool canTakeReplay, ref int dataUserId, ref string userLink, Thread thread, Dictionary<string, List<Match>> currentlyUserToMatch, ref StringBuilder fullPost, ref bool takePost)
         {
             if (line.Contains("\"articleBody\": \""))
             {
@@ -324,7 +317,7 @@ namespace UsersToTournamentMatches
                                 Id = dataUserId,
                                 NormalName = postedBy,
                                 Name = _regexUtil.Regex(postedBy),
-                                ProfileLink = "http://www.smogon.com" + userLink
+                                ProfileLink = userLink
                             };
 
                             users.Add(newUser);
@@ -339,7 +332,7 @@ namespace UsersToTournamentMatches
                             if (existingUser.ProfileLink == null)
                             {
                                 existingUser.Id = dataUserId;
-                                existingUser.ProfileLink = "http://www.smogon.com" + userLink;
+                                existingUser.ProfileLink = userLink;
                                 idUserTranslation.Add(dataUserId, existingUser);
                             }
                             else
@@ -374,8 +367,8 @@ namespace UsersToTournamentMatches
 
                     User currentUser = nameUserTranslation[_regexUtil.Regex(postedBy)];
                     string fullPostString = fullPost.ToString();
-                    string regexFullPost = _regexUtil.Regex(StripHTML(fullPostString));
-                    string regexWithSpaceFullPost = _regexUtil.RegexWithSpace(StripHTML(fullPostString)).Replace(_regexUtil.RegexWithSpace(currentUser.NormalName), "").Replace(_regexUtil.Regex(currentUser.NormalName), "");
+                    string regexFullPost = _regexUtil.Regex(_regexUtil.StripHTML(fullPostString));
+                    string regexWithSpaceFullPost = _regexUtil.RegexWithSpace(_regexUtil.StripHTML(fullPostString)).Replace(_regexUtil.RegexWithSpace(currentUser.NormalName), "").Replace(_regexUtil.Regex(currentUser.NormalName), "");
                     if (fullPostString.Contains("replay.pokemonshowdown.com/") && postNumber != 1)
                     {
                         bool notExistingMatch = true;
@@ -482,7 +475,7 @@ namespace UsersToTournamentMatches
                 postedBy = postedBy.Substring(postedBy.IndexOf("\"") + 1);
                 postedBy = postedBy.Substring(0, postedBy.IndexOf("\""));
             }
-            else if ((StripHTML(line).Contains(" vs. ") || StripHTML(line).Contains(" vs ")) && (postNumber == 1 || postNumber == 2 || url.Contains("-replay")))
+            else if ((_regexUtil.StripHTML(line).Contains(" vs. ") || _regexUtil.StripHTML(line).Contains(" vs ")) && (postNumber == 1 || postNumber == 2 || url.Contains("-replay")))
             {
                 Match match = new Match();
 
@@ -493,12 +486,12 @@ namespace UsersToTournamentMatches
 
                 string toFilterFor = "vs";
 
-                if (StripHTML(line).Contains(" vs. "))
+                if (_regexUtil.StripHTML(line).Contains(" vs. "))
                 {
                     toFilterFor = "vs.";
                 }
 
-                string preparedLine = FilterOutTierDefinition(StripHTML(line));
+                string preparedLine = FilterOutTierDefinition(_regexUtil.StripHTML(line));
 
                 if (preparedLine != toFilterFor && preparedLine.Contains(" " + toFilterFor + " "))
                 {
@@ -565,7 +558,7 @@ namespace UsersToTournamentMatches
                         {
                             winnerName = winnerName.Substring(0, winnerName.IndexOf("</b>"));
                         }
-                        winnerName = StripHTML(winnerName);
+                        winnerName = _regexUtil.StripHTML(winnerName);
                         if (nameUserTranslation.ContainsKey(_regexUtil.Regex(winnerName)))
                         {
                             User winner = nameUserTranslation[_regexUtil.Regex(winnerName)];
@@ -610,9 +603,9 @@ namespace UsersToTournamentMatches
                     match.PostDate = postDate;
                 }
 
-                Match toKeep = null;
-                Match toLoose = null;
-                foreach (Match otherMatch in nameUserTranslation[match.FirstUser].Matches)
+                Match? toKeep = null;
+                Match? toLoose = null;
+                foreach (var otherMatch in nameUserTranslation[match.FirstUser].Matches.Where((match) => !match.Irrelevant))
                 {
                     if (otherMatch != match)
                     {
@@ -638,7 +631,7 @@ namespace UsersToTournamentMatches
                 }
                 if (toKeep != null && toLoose != null)
                 {
-                    foreach (string replay in toLoose.Replays)
+                    foreach (var replay in toLoose.Replays)
                     {
                         if (!toKeep.Replays.Contains(replay))
                         {
@@ -649,8 +642,7 @@ namespace UsersToTournamentMatches
                     {
                         toKeep.Winner = toLoose.Winner;
                     }
-                    nameUserTranslation[toKeep.FirstUser].Matches.Remove(toLoose);
-                    nameUserTranslation[toKeep.SecondUser].Matches.Remove(toLoose);
+                    toLoose.Irrelevant = true;
                     currentlyUserToMatch[toKeep.FirstUser].Remove(toLoose);
                     if (!currentlyUserToMatch[toKeep.FirstUser].Contains(toKeep))
                     {
@@ -672,7 +664,7 @@ namespace UsersToTournamentMatches
 
         private string FilterOutTierDefinition(string line)
         {
-            string tempLine = line;
+            var tempLine = line;
             if (line.IndexOf(":") < line.Replace(".", "").IndexOf(" vs "))
             {
                 tempLine = tempLine.Substring(tempLine.IndexOf(":") + 1);
@@ -680,12 +672,5 @@ namespace UsersToTournamentMatches
             return tempLine;
         }
 
-        private Regex htmlRegex = new Regex("<.*?>");
-        private Regex eckigRegex = new Regex("\\[.*?\\]");
-        private Regex rundRegex = new Regex("\\(.*?\\)");
-        private string StripHTML(string inputString)
-        {
-            return rundRegex.Replace(eckigRegex.Replace(htmlRegex.Replace(inputString, ""), ""), "").Trim();
-        }
     }
 }

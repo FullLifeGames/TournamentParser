@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 
 namespace UsersToTournamentMatches
@@ -6,14 +7,24 @@ namespace UsersToTournamentMatches
     public class Match
     {
 
+        [JsonProperty("r")]
         public ICollection<string> Replays { get; set; } = new List<string>();
-        public string FirstUser { get; set; }
-        public string SecondUser { get; set; }
-        public Thread Thread { get; set; }
+        [JsonProperty("f")]
+        public string? FirstUser { get; set; }
+        [JsonProperty("s")]
+        public string? SecondUser { get; set; }
+        [JsonProperty("t")]
+        public Thread? Thread { get; set; }
+        [JsonProperty("d")]
         public bool Finished { get; set; }
+        [JsonProperty("p")]
         public DateTime PostDate { get; set; } = DateTime.Now;
 
-        public string Winner { get; set; }
+        [JsonProperty("w")]
+        public string? Winner { get; set; }
+
+        [JsonIgnore]
+        public bool Irrelevant { get; set; }
 
         public override string ToString()
         {

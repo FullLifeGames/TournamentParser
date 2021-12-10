@@ -1,15 +1,22 @@
-﻿using System.Collections.Generic;
+﻿using Newtonsoft.Json;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 
 namespace UsersToTournamentMatches
 {
     public class User
     {
 
+        [JsonProperty("i")]
         public int Id { get; set; } = -1;
-        public string Name { get; set; }
-        public string ProfileLink { get; set; }
-        public string NormalName { get; set; }
-        public ICollection<Match> Matches { get; set; } = new List<Match>();
+        [JsonProperty("n")]
+        public string? Name { get; set; }
+        [JsonProperty("l")]
+        public string? ProfileLink { get; set; }
+        [JsonProperty("o")]
+        public string? NormalName { get; set; }
+        [JsonProperty("m")]
+        public ConcurrentBag<Match> Matches { get; set; } = new ConcurrentBag<Match>();
 
         public override string ToString()
         {
