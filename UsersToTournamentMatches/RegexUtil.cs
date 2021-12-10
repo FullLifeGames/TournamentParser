@@ -22,9 +22,9 @@ namespace UsersToTournamentMatches
         private readonly Regex rgxWithAbc = new("[^a-zA-Z0-9]");
         public string RegexWithABC(string toFilter)
         {
-            if (toFilter.Contains(" "))
+            if (toFilter.Contains(' '))
             {
-                toFilter = toFilter.Substring(0, toFilter.LastIndexOf(" "));
+                toFilter = toFilter[..toFilter.LastIndexOf(" ")];
             }
             toFilter = rgxWithAbc.Replace(toFilter, "");
             return toFilter.ToLower();

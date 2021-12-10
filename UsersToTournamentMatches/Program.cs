@@ -8,7 +8,7 @@ var nameUserTranslation = await tournament.GetMatchesForUsers();
 var output = "";
 foreach (var user in nameUserTranslation.Values)
 {
-    if (user.Matches.Count > 0)
+    if (!user.Matches.IsEmpty)
     {
         output = user + "\r\n";
     }
