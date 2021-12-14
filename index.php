@@ -183,7 +183,7 @@ a {
 						}
 						
 						$secondUser = $match->s;									
-						$secondUserOut = '<a href="https://fulllifegames.com/Tools/MatchChecker/?user=' . $secondUser . '">' . $secondUserOut . '</a>';
+						$secondUserOut = '<a href="https://fulllifegames.com/Tools/MatchChecker/?user=' . $secondUser . '">' . $secondUser . '</a>';
 						if($match->w != null && $secondUser == $match->w){
 							$secondUserOut = "<b>" . $secondUserOut . "</b>";
 						}

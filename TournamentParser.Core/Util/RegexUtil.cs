@@ -1,6 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 
-namespace UsersToTournamentMatches
+namespace TournamentParser.Util
 {
     public class RegexUtil
     {
@@ -33,9 +33,10 @@ namespace UsersToTournamentMatches
         private readonly Regex htmlRegex = new("<.*?>");
         private readonly Regex eckigRegex = new("\\[.*?\\]");
         private readonly Regex rundRegex = new("\\(.*?\\)");
+        private readonly Regex weirdSpace = new(" ");
         public string StripHTML(string inputString)
         {
-            return rundRegex.Replace(eckigRegex.Replace(htmlRegex.Replace(inputString, ""), ""), "").Trim();
+            return weirdSpace.Replace(rundRegex.Replace(eckigRegex.Replace(htmlRegex.Replace(inputString, ""), ""), ""), "").Trim();
         }
 
     }

@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace UsersToTournamentMatches
+namespace TournamentParser.Data
 {
     public class Match
     {
