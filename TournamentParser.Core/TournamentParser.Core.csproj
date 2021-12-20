@@ -1,10 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
-    <OutputType>Library</OutputType>
-	<Nullable>enable</Nullable>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-  </ItemGroup>
+	<PropertyGroup>
+		<TargetFramework>net6.0</TargetFramework>
+		<Description>This tool goes through all Smogon Tournament threads and parses the match and user information.</Description>
+		<Authors>FullLifeGames</Authors>
+		<Copyright>FullLifeGames</Copyright>
+		<PackageProjectUrl>https://github.com/FullLifeGames/TournamentParser</PackageProjectUrl>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<RepositoryUrl>https://github.com/FullLifeGames/TournamentParser</RepositoryUrl>
+		<PackageTags>Smogon Tournament Parser</PackageTags>
+		<RepositoryType>GitHub</RepositoryType>
+		<PackageVersion>1.0.0</PackageVersion>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+	</ItemGroup>
 </Project>
