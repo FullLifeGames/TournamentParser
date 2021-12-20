@@ -5,15 +5,14 @@ namespace TournamentParser.Data
 {
     public class User
     {
-
         [JsonProperty("i")]
         public int Id { get; set; } = -1;
         [JsonProperty("n")]
-        public string? Name { get; set; }
+        public string Name { get; set; }
         [JsonProperty("l")]
-        public string? ProfileLink { get; set; }
+        public string ProfileLink { get; set; }
         [JsonProperty("o")]
-        public string? NormalName { get; set; }
+        public string NormalName { get; set; }
         [JsonProperty("m")]
         public ConcurrentBag<Match> Matches { get; set; } = new ConcurrentBag<Match>();
 
@@ -28,6 +27,5 @@ namespace TournamentParser.Data
 
             return output;
         }
-        
     }
 }

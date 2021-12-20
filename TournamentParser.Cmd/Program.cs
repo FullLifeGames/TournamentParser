@@ -2,7 +2,7 @@
 using TournamentParser.Tournament;
 
 var tournament = new SmogonTournament();
-var nameUserTranslation = await tournament.GetMatchesForUsers();
+var nameUserTranslation = await tournament.GetMatchesForUsers().ConfigureAwait(false);
 
 var output = "";
 foreach (var user in nameUserTranslation.Values)
@@ -13,8 +13,8 @@ foreach (var user in nameUserTranslation.Values)
     }
 }
 
-await File.WriteAllTextAsync("output.txt", output);
+await File.WriteAllTextAsync("output.txt", output).ConfigureAwait(false);
 
 var json = JsonConvert.SerializeObject(nameUserTranslation);
 
-await File.WriteAllTextAsync("output.json", json);
+await File.WriteAllTextAsync("output.json", json).ConfigureAwait(false);

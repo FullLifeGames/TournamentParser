@@ -2,18 +2,14 @@
 
 namespace TournamentParser.Util
 {
-    public class Common
+    public static class Common
     {
-        private static HttpClient? _httpClient;
+        private static HttpClient _httpClient;
         public static HttpClient HttpClient
         {
             get
             {
-                if (_httpClient == null)
-                {
-                    _httpClient = new HttpClient();
-                }
-                return _httpClient;
+                return _httpClient ??= new HttpClient();
             }
             set => _httpClient = value;
         }

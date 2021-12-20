@@ -4,7 +4,6 @@ namespace TournamentParser.Util
 {
     public class RegexUtil
     {
-
         private readonly Regex rgx = new("[, ]");
         public string Regex(string toFilter)
         {
@@ -39,5 +38,10 @@ namespace TournamentParser.Util
             return weirdSpace.Replace(rundRegex.Replace(eckigRegex.Replace(htmlRegex.Replace(inputString, ""), ""), ""), "").Trim();
         }
 
+        private readonly Regex positionRegex = new("([0-9]+\\.) ");
+        public string RemovePositions(string userString)
+        {
+            return positionRegex.Replace(userString, "");
+        }
     }
 }

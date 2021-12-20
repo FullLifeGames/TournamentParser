@@ -8,7 +8,7 @@ namespace TournamentParser.Tournament
     {
         public override IThreadCollector ThreadCollector => new SmogonThreadCollector();
 
-        private SmogonThreadScanner threadScanner = new();
+        private readonly SmogonThreadScanner threadScanner = new();
         public override IThreadScanner ThreadScanner => threadScanner;
 
         public override IFinalizer Finalizer => new SmogonFinalizer();

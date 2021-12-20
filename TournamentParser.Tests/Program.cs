@@ -16,8 +16,8 @@ namespace TournamentParser.Tests
             var threads = tournament.ThreadCollector.GetThreadsForForums().Result;
             var nonTourThreads = tournament.ThreadCollector.GetNonTourThreadsForForums().Result;
 
-            Assert.IsTrue(threads.Any());
-            Assert.IsTrue(nonTourThreads.Any());
+            Assert.IsTrue(threads.Count > 0);
+            Assert.IsTrue(nonTourThreads.Count > 0);
         }
 
         [Test]
@@ -27,10 +27,29 @@ namespace TournamentParser.Tests
 
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/official-smogon-tournament-xvii-finals-won-by-empo.3680402/", new CancellationToken()).Wait();
 
-            var playingUsers = tournament.ThreadScanner.Users.Where((user) => user.Matches.Any());
+            var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.IsTrue(playingUsers.Count() == 2);
-            Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count() == 3);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Any());
+            Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count == 3);
+            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+        }
+
+        [Test]
+        public void Single_Scanner_SmogTour_Test()
+        {
+            var tournament = new SmogonTournament();
+
+            tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/smogon-tour-30-playoffs-finals-won-by-empo.3673513/", new CancellationToken()).Wait();
+
+            var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
+            Assert.IsTrue(playingUsers.Count() > 10 && playingUsers.Count() < 20);
+            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation["empo"].Matches
+                .First((match) =>
+                    string.Equals(match.SecondUser, "soulwind", System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(match.FirstUser, "soulwind", System.StringComparison.OrdinalIgnoreCase)
+                )
+                .Replays.Count == 3
+            );
+            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
         }
 
         [Test]
@@ -40,9 +59,9 @@ namespace TournamentParser.Tests
 
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/official-smogon-tournament-xvii-round-1-d.3676237/", new CancellationToken()).Wait();
 
-            var playingUsers = tournament.ThreadScanner.Users.Where((user) => user.Matches.Any());
+            var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.IsTrue(playingUsers.Count() > 100);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Any());
+            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
         }
 
         [Test]
@@ -51,7 +70,7 @@ namespace TournamentParser.Tests
         {
             var matches = new SmogonTournament().GetMatchesForUsers().Result;
 
-            Assert.IsTrue(matches.Any());
+            Assert.IsTrue(matches.Count > 0);
         }
     }
 }

@@ -13,17 +13,10 @@ namespace TournamentParser.ThreadScanner
 {
     public class SmogonThreadScanner : IThreadScanner
     {
-        private ConcurrentBag<User> users = new();
-        public ConcurrentBag<User> Users => users;
-
-        private ConcurrentDictionary<string, User> nameUserTranslation = new();
-        public IDictionary<string, User> NameUserTranslation => nameUserTranslation;
-
-        private ConcurrentDictionary<int, User> idUserTranslation = new();
-        public IDictionary<int, User> IdUserTranslation => idUserTranslation;
-
-        private ConcurrentDictionary<string, string> userWithSpaceTranslation = new();
-        public IDictionary<string, string> UserWithSpaceTranslation => userWithSpaceTranslation;
+        public ConcurrentBag<User> Users { get; } = new();
+        public IDictionary<string, User> NameUserTranslation { get; } = new ConcurrentDictionary<string, User>();
+        public IDictionary<int, User> IdUserTranslation { get; } = new ConcurrentDictionary<int, User>();
+        public IDictionary<string, string> UserWithSpaceTranslation { get; } = new ConcurrentDictionary<string, string>();
 
         private readonly RegexUtil _regexUtil = new();
 
@@ -35,19 +28,19 @@ namespace TournamentParser.ThreadScanner
                 {
                     Console.WriteLine("Currently Scanning: " + url);
                     var beforeCount = Users.Count;
-                    await AnalyzeTopic(url, ct);
+                    await AnalyzeTopic(url, ct).ConfigureAwait(false);
                     var afterCount = Users.Count;
                     Console.WriteLine("Added " + (afterCount - beforeCount) + " Users on " + url);
                     Console.WriteLine();
                 }
-            );
+            ).ConfigureAwait(false);
         }
 
         public async Task AnalyzeTopic(string url, System.Threading.CancellationToken ct)
         {
             try
             {
-                var site = await Common.HttpClient.GetStringAsync(url, ct);
+                var site = await Common.HttpClient.GetStringAsync(url, ct).ConfigureAwait(false);
                 var pages = 1;
                 if (site.Contains("<nav class=\"pageNavWrapper"))
                 {
@@ -72,10 +65,10 @@ namespace TournamentParser.ThreadScanner
                 thread.Id = id;
                 for (var pageCount = 1; pageCount <= pages; pageCount++)
                 {
-                    site = await Common.HttpClient.GetStringAsync(url + "page-" + pageCount, ct);
+                    site = await Common.HttpClient.GetStringAsync(url + "page-" + pageCount, ct).ConfigureAwait(false);
 
                     var postStarted = false;
-                    var postNumber = 0 + (pageCount - 1) * 25;
+                    var postNumber = 0 + ((pageCount - 1) * 25);
                     var postDate = DateTime.Now;
 
                     var postedBy = "";
@@ -108,7 +101,6 @@ namespace TournamentParser.ThreadScanner
         {
             if (line.Contains("\"articleBody\": \""))
             {
-
             }
             else if (line.Contains("<h1 class=\"p-title-value\">"))
             {
@@ -221,13 +213,13 @@ namespace TournamentParser.ThreadScanner
                         {
                             foreach (var currentMatch in currentlyUserToMatch[_regexUtil.Regex(postedBy)])
                             {
-                                if (NameUserTranslation[currentMatch.FirstUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.FirstUser + " ") || regexWithSpaceFullPost.Contains(" " + UserWithSpaceTranslation[currentMatch.FirstUser] + " "))
+                                if ((NameUserTranslation[currentMatch.FirstUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.FirstUser + " ")) || regexWithSpaceFullPost.Contains(" " + UserWithSpaceTranslation[currentMatch.FirstUser] + " "))
                                 {
                                     match = currentMatch;
                                     notExistingMatch = false;
                                     break;
                                 }
-                                if (currentMatch.SecondUser != null && NameUserTranslation[currentMatch.SecondUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.SecondUser + " ") || regexWithSpaceFullPost.Contains(" " + UserWithSpaceTranslation[currentMatch.SecondUser] + " "))
+                                if ((currentMatch.SecondUser != null && NameUserTranslation[currentMatch.SecondUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.SecondUser + " ")) || regexWithSpaceFullPost.Contains(" " + UserWithSpaceTranslation[currentMatch.SecondUser] + " "))
                                 {
                                     match = currentMatch;
                                     notExistingMatch = false;
@@ -342,6 +334,9 @@ namespace TournamentParser.ThreadScanner
                     var userOne = preparedLine[..preparedLine.IndexOf(" " + toFilterFor + " ")];
                     var userTwo = preparedLine[(preparedLine.IndexOf(" " + toFilterFor + " ") + (" " + toFilterFor + " ").Length)..];
 
+                    userOne = _regexUtil.RemovePositions(userOne);
+                    userTwo = _regexUtil.RemovePositions(userTwo);
+
                     if (NameUserTranslation.ContainsKey(_regexUtil.Regex(userOne)))
                     {
                         match.FirstUser = NameUserTranslation[_regexUtil.Regex(userOne)].Name;
@@ -451,8 +446,8 @@ namespace TournamentParser.ThreadScanner
                     match.PostDate = postDate;
                 }
 
-                Match? toKeep = null;
-                Match? toLoose = null;
+                Match toKeep = null;
+                Match toLoose = null;
                 foreach (var otherMatch in NameUserTranslation[match.FirstUser].Matches.Where((match) => !match.Irrelevant))
                 {
                     if (otherMatch != match)
@@ -502,7 +497,6 @@ namespace TournamentParser.ThreadScanner
                         currentlyUserToMatch[toKeep.SecondUser].Add(toKeep);
                     }
                 }
-
             }
             if (takePost && !line.Contains("/likes\""))
             {

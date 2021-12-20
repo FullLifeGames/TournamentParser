@@ -25,20 +25,18 @@ namespace TournamentParser.Tournament
 
         public async Task<IDictionary<string, User>> GetMatchesForUsers()
         {
-            var threadsForForums = await ThreadCollector.GetThreadsForForums();
-            var nonTourThreadsForForums = await ThreadCollector.GetNonTourThreadsForForums();
+            var threadsForForums = await ThreadCollector.GetThreadsForForums().ConfigureAwait(false);
+            var nonTourThreadsForForums = await ThreadCollector.GetNonTourThreadsForForums().ConfigureAwait(false);
 
             var totalCount =
                 threadsForForums.Sum((thread) => thread.Value.Count)
                 + nonTourThreadsForForums.Sum((thread) => thread.Value.Count);
 
-            await ThreadScanner.ScanThreads(threadsForForums);
-            await ThreadScanner.ScanThreads(nonTourThreadsForForums);
+            await ThreadScanner.ScanThreads(threadsForForums).ConfigureAwait(false);
+            await ThreadScanner.ScanThreads(nonTourThreadsForForums).ConfigureAwait(false);
             Finalizer.Finalize(ThreadScanner.NameUserTranslation);
 
             return ThreadScanner.NameUserTranslation;
-
         }
-
     }
 }

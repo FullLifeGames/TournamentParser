@@ -9,10 +9,10 @@ namespace TournamentParser.ThreadCollector
     public class SmogonThreadCollector : IThreadCollector
     {
         public async Task<IDictionary<string, List<string>>> GetGeneralThreadsForForums(
-            string filter, IDictionary<string, string>? additionals = null)
+            string filter, IDictionary<string, string> additionals = null)
         {
             var tournamentToLinks = new Dictionary<string, string>();
-            var smogonMain = await Common.HttpClient.GetStringAsync("http://www.smogon.com/forums/");
+            var smogonMain = await Common.HttpClient.GetStringAsync("http://www.smogon.com/forums/").ConfigureAwait(false);
             var scanStartOne = false;
 
             foreach (var line in smogonMain.Split('\n'))
@@ -57,7 +57,7 @@ namespace TournamentParser.ThreadCollector
             await Parallel.ForEachAsync(tournamentToLinks, async (kv, ct) =>
             {
                 threadsForForums.Add(kv.Value, new List<string>());
-                var site = await Common.HttpClient.GetStringAsync(kv.Value, ct);
+                var site = await Common.HttpClient.GetStringAsync(kv.Value, ct).ConfigureAwait(false);
                 var pages = 1;
                 if (site.Contains("<nav class=\"pageNavWrapper"))
                 {
@@ -76,7 +76,7 @@ namespace TournamentParser.ThreadCollector
                 var beforeCount = threadsForForums[kv.Value].Count;
                 for (var pageCount = 1; pageCount <= pages; pageCount++)
                 {
-                    site = await Common.HttpClient.GetStringAsync(kv.Value + "page-" + pageCount, ct);
+                    site = await Common.HttpClient.GetStringAsync(kv.Value + "page-" + pageCount, ct).ConfigureAwait(false);
 
                     foreach (var line in site.Split('\n'))
                     {
@@ -98,7 +98,7 @@ namespace TournamentParser.ThreadCollector
                 Console.WriteLine("Found " + (afterCount - beforeCount) + " scannable tournament threads in: " + kv.Value);
                 Console.WriteLine();
             }
-            );
+            ).ConfigureAwait(false);
 
             return threadsForForums;
         }
@@ -108,13 +108,12 @@ namespace TournamentParser.ThreadCollector
             return await GetGeneralThreadsForForums("Tournaments", new Dictionary<string, string>()
             {
                 { "Standard Tournament Forums", Common.OfficialTournamentSite }
-            });
+            }).ConfigureAwait(false);
         }
 
         public async Task<IDictionary<string, List<string>>> GetNonTourThreadsForForums()
         {
-            return await GetGeneralThreadsForForums("Smogon Metagames");
+            return await GetGeneralThreadsForForums("Smogon Metagames").ConfigureAwait(false);
         }
-
     }
 }
