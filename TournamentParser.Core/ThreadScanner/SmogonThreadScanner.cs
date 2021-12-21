@@ -337,6 +337,9 @@ namespace TournamentParser.ThreadScanner
                     userOne = _regexUtil.RemovePositions(userOne);
                     userTwo = _regexUtil.RemovePositions(userTwo);
 
+                    userOne = _regexUtil.RemoveNumberReplays(userOne);
+                    userTwo = _regexUtil.RemoveNumberReplays(userTwo);
+
                     if (NameUserTranslation.ContainsKey(_regexUtil.Regex(userOne)))
                     {
                         match.FirstUser = NameUserTranslation[_regexUtil.Regex(userOne)].Name;

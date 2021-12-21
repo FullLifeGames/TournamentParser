@@ -43,5 +43,11 @@ namespace TournamentParser.Util
         {
             return positionRegex.Replace(userString, "");
         }
+
+        private readonly Regex numberReplayRegex = new("(- [0-9]( \\| [0-9])*)");
+        public string RemoveNumberReplays(string userString)
+        {
+            return numberReplayRegex.Replace(userString, "").Trim();
+        }
     }
 }

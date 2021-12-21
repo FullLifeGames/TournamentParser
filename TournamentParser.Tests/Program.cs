@@ -53,6 +53,19 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void Single_Scanner_OLT_Test()
+        {
+            var tournament = new SmogonTournament();
+
+            tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/smogons-official-ladder-tournament-v-replay-thread.3640819/", new CancellationToken()).Wait();
+
+            var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
+            Assert.IsTrue(playingUsers.Count() > 20);
+            Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count > 0);
+            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+        }
+
+        [Test]
         public void Single_Scanner_Stress_Test()
         {
             var tournament = new SmogonTournament();
