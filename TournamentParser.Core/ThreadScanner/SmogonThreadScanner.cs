@@ -311,7 +311,10 @@ namespace TournamentParser.ThreadScanner
                 postedBy = postedBy[(postedBy.IndexOf(Common.Quotation) + 1)..];
                 postedBy = postedBy[..postedBy.IndexOf(Common.Quotation)];
             }
-            else if ((_regexUtil.StripHTML(line).Contains(" vs. ") || _regexUtil.StripHTML(line).Contains(" vs ")) && (postNumber == 1 || postNumber == 2 || url.Contains("-replay")))
+            else if (
+                (_regexUtil.StripHTML(line).Contains(" vs. ") || _regexUtil.StripHTML(line).Contains(" vs ") || _regexUtil.StripHTML(line).Contains(" VS. ") || _regexUtil.StripHTML(line).Contains(" VS "))
+                && (postNumber == 1 || postNumber == 2 || url.Contains("-replay"))
+            )
             {
                 var match = new Match();
 
@@ -325,6 +328,16 @@ namespace TournamentParser.ThreadScanner
                 if (_regexUtil.StripHTML(line).Contains(" vs. "))
                 {
                     toFilterFor = "vs.";
+                }
+
+                if (_regexUtil.StripHTML(line).Contains(" VS "))
+                {
+                    toFilterFor = "VS";
+                }
+
+                if (_regexUtil.StripHTML(line).Contains(" VS. "))
+                {
+                    toFilterFor = "VS.";
                 }
 
                 var preparedLine = FilterOutTierDefinition(_regexUtil.StripHTML(line));

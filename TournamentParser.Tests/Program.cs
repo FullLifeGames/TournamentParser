@@ -66,6 +66,19 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void Single_Scanner_SmogTour_Missing_Test()
+        {
+            var tournament = new SmogonTournament();
+
+            tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/smogon-tour-season-29-playoffs-finals-won-by-abr.3664063/", new CancellationToken()).Wait();
+
+            var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
+            Assert.IsTrue(playingUsers.Count() > 15);
+            Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count > 0);
+            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+        }
+
+        [Test]
         public void Single_Scanner_Stress_Test()
         {
             var tournament = new SmogonTournament();
