@@ -205,6 +205,7 @@ namespace TournamentParser.ThreadScanner
                     var fullPostString = fullPost.ToString();
                     var regexFullPost = _regexUtil.Regex(_regexUtil.StripHTML(fullPostString));
                     var regexWithSpaceFullPost = _regexUtil.RegexWithSpace(_regexUtil.StripHTML(fullPostString)).Replace(_regexUtil.RegexWithSpace(currentUser.NormalName), "").Replace(_regexUtil.Regex(currentUser.NormalName), "");
+                    regexWithSpaceFullPost = _regexUtil.RemoveReactions(regexWithSpaceFullPost);
                     if (fullPostString.Contains("replay.pokemonshowdown.com/") && postNumber != 1)
                     {
                         var notExistingMatch = true;

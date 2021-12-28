@@ -79,6 +79,20 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void Single_Scanner_Doubles_Correct_Info_Test()
+        {
+            var tournament = new SmogonTournament();
+
+            tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/ss-doubles-ou-2021-fall-seasonal-round-6.3691483/", new CancellationToken()).Wait();
+            tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/2021-doubles-invitational.3694498/", new CancellationToken()).Wait();
+
+            var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
+            Assert.IsTrue(playingUsers.Count() > 15);
+            Assert.IsTrue(playingUsers.Any((user) => user.Matches.Any((match) => match.Replays.Count > 0)));
+            Assert.IsTrue(playingUsers.First((user) => user.Name == "crunchman").Matches.Count == 1);
+        }
+
+        [Test]
         public void Single_Scanner_Stress_Test()
         {
             var tournament = new SmogonTournament();

@@ -49,5 +49,11 @@ namespace TournamentParser.Util
         {
             return numberReplayRegex.Replace(userString, "").Trim();
         }
+
+        private readonly Regex reactionRegex = new("reactions:\n.*");
+        public string RemoveReactions(string lineString)
+        {
+            return reactionRegex.Replace(lineString, "").Trim();
+        }
     }
 }
