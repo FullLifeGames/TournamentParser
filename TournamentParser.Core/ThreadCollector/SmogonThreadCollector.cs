@@ -9,7 +9,7 @@ namespace TournamentParser.ThreadCollector
     public class SmogonThreadCollector : IThreadCollector
     {
         public async Task<IDictionary<string, List<string>>> GetGeneralThreadsForForums(
-            string filter, IDictionary<string, string> additionals = null)
+            string filter, IDictionary<string, string>? additionals = null)
         {
             var tournamentToLinks = new Dictionary<string, string>();
             var smogonMain = await Common.HttpClient.GetStringAsync("http://www.smogon.com/forums/").ConfigureAwait(false);

@@ -5,22 +5,34 @@ namespace TournamentParser.Util
     public class RegexUtil
     {
         private readonly Regex rgx = new("[, ]");
-        public string Regex(string toFilter)
+        public string Regex(string? toFilter)
         {
+            if (toFilter == null)
+            {
+                return "";
+            }
             toFilter = rgx.Replace(toFilter, "");
             return toFilter.ToLower();
         }
 
         private readonly Regex rgxWithSpace = new("[,]");
-        public string RegexWithSpace(string toFilter)
+        public string RegexWithSpace(string? toFilter)
         {
+            if (toFilter == null)
+            {
+                return "";
+            }
             toFilter = rgxWithSpace.Replace(toFilter, "");
             return toFilter.ToLower();
         }
 
         private readonly Regex rgxWithAbc = new("[^a-zA-Z0-9]");
-        public string RegexWithABC(string toFilter)
+        public string RegexWithABC(string? toFilter)
         {
+            if (toFilter == null)
+            {
+                return "";
+            }
             if (toFilter.Contains(' '))
             {
                 toFilter = toFilter[..toFilter.LastIndexOf(" ")];

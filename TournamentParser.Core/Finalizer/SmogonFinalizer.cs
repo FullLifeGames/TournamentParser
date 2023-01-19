@@ -19,10 +19,10 @@ namespace TournamentParser.Finalizer
                 {
                     if (match.Winner == null)
                     {
-                        var threadName = _regexUtil.RegexWithABC(match.Thread.Name);
+                        var threadName = _regexUtil.RegexWithABC(match.Thread?.Name);
                         foreach (var matchCompare in user.Matches)
                         {
-                            if (match != matchCompare && threadName == _regexUtil.RegexWithABC(matchCompare.Thread.Name))
+                            if (match != matchCompare && threadName == _regexUtil.RegexWithABC(matchCompare.Thread?.Name))
                             {
                                 if (match.PostDate < matchCompare.PostDate)
                                 {

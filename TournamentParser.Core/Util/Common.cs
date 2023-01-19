@@ -1,15 +1,16 @@
 ﻿using System.Net.Http;
+using TournamentParser.Core.Util;
 
 namespace TournamentParser.Util
 {
     public static class Common
     {
-        private static HttpClient _httpClient;
+        private static HttpClient? _httpClient;
         public static HttpClient HttpClient
         {
             get
             {
-                return _httpClient ??= new HttpClient();
+                return _httpClient ??= new HttpClient(new HttpRetryMessageHandler(new HttpClientHandler()));
             }
             set => _httpClient = value;
         }

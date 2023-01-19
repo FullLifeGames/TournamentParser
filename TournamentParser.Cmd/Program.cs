@@ -1,20 +1,30 @@
-﻿using Newtonsoft.Json;
-using TournamentParser.Tournament;
+﻿using NeoSmart.Caching.Sqlite;
+using Newtonsoft.Json;
+using TournamentParser.Parser;
 
-var tournament = new SmogonTournament();
+var tournament = new SmogonParser(
+    new SqliteCache(
+        new SqliteCacheOptions()
+        {
+            MemoryOnly = false,
+            CachePath = "SmogonTournamentParser.db",
+        }
+    )
+);
 var nameUserTranslation = await tournament.GetMatchesForUsers().ConfigureAwait(false);
 
-var output = "";
-foreach (var user in nameUserTranslation.Values)
+// write text directly to a file
+using (var file = File.CreateText("output.txt"))
 {
-    if (!user.Matches.IsEmpty)
+    foreach (var user in nameUserTranslation.Values.Where((user) => !user.Matches.IsEmpty))
     {
-        output += user + "\r\n";
+        file.WriteLine(user.ToString());
     }
 }
 
-await File.WriteAllTextAsync("output.txt", output).ConfigureAwait(false);
-
-var json = JsonConvert.SerializeObject(nameUserTranslation);
-
-await File.WriteAllTextAsync("output.json", json).ConfigureAwait(false);
+// serialize JSON directly to a file
+using (var file = File.CreateText("output.json"))
+{
+    var serializer = new JsonSerializer();
+    serializer.Serialize(file, nameUserTranslation);
+}

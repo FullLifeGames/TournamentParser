@@ -6,9 +6,9 @@ using TournamentParser.Finalizer;
 using TournamentParser.ThreadCollector;
 using TournamentParser.ThreadScanner;
 
-namespace TournamentParser.Tournament
+namespace TournamentParser.Parser
 {
-    public abstract class Tournament
+    public abstract class Parser
     {
         public abstract IThreadCollector ThreadCollector
         {
