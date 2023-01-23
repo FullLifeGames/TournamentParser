@@ -28,7 +28,10 @@ namespace TournamentParser.ThreadCollector
                         tourUrl = tourUrl[..tourUrl.IndexOf(Common.Quotation)];
                         tourUrl = "http://www.smogon.com" + tourUrl;
 
-                        tournamentToLinks.Add(tourName, tourUrl);
+                        if (!tournamentToLinks.ContainsKey(tourName))
+                        {
+                            tournamentToLinks.Add(tourName, tourUrl);
+                        }
                     }
                     else if (line.Contains("node-stats\""))
                     {
@@ -52,11 +55,10 @@ namespace TournamentParser.ThreadCollector
                 }
             }
 
-            IDictionary<string, List<string>> threadsForForums = new ConcurrentDictionary<string, List<string>>();
-
+            var threadsForForums = new ConcurrentDictionary<string, List<string>>();
             await Parallel.ForEachAsync(tournamentToLinks, async (kv, ct) =>
             {
-                threadsForForums.Add(kv.Value, new List<string>());
+                threadsForForums.AddOrUpdate(kv.Value, new List<string>(), (_, oldValue) => oldValue);
                 var site = await Common.HttpClient.GetStringAsync(kv.Value, ct).ConfigureAwait(false);
                 var pages = 1;
                 if (site.Contains("<nav class=\"pageNavWrapper"))
