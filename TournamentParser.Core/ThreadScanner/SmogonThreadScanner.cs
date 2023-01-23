@@ -64,7 +64,14 @@ namespace TournamentParser.ThreadScanner
                 return false;
             }
 
-            var cachedResults = _cache.GetString(fullUrl);
+            string? cachedResults = null;
+            try
+            {
+                cachedResults = _cache.GetString(fullUrl);
+            }
+            catch (NullReferenceException)
+            {
+            }
             if (cachedResults == null)
             {
                 return false;
