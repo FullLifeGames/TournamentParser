@@ -665,13 +665,8 @@ namespace TournamentParser.ThreadScanner
                     {
                         foreach (var currentMatch in currentlyUserToMatch[postedByRegex])
                         {
-                            if (currentMatch.FirstUser != null && ((NameUserTranslation[currentMatch.FirstUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.FirstUser + " ")) || regexWithSpaceFullPost.Contains(" " + UserWithSpaceTranslation[currentMatch.FirstUser] + " ")))
-                            {
-                                match = currentMatch;
-                                notExistingMatch = false;
-                                break;
-                            }
-                            if (currentMatch.SecondUser != null && ((NameUserTranslation[currentMatch.SecondUser] != currentUser && regexWithSpaceFullPost.Contains(" " + currentMatch.SecondUser + " ")) || regexWithSpaceFullPost.Contains(" " + UserWithSpaceTranslation[currentMatch.SecondUser] + " ")))
+                            if (IsUserPartOfPost(currentMatch.FirstUser, currentUser, regexWithSpaceFullPost)
+                                || IsUserPartOfPost(currentMatch.SecondUser, currentUser, regexWithSpaceFullPost))
                             {
                                 match = currentMatch;
                                 notExistingMatch = false;
@@ -695,8 +690,7 @@ namespace TournamentParser.ThreadScanner
                             // Order by name length of the users so that short common terms are ignored longer and bigger names can be respected
                             foreach (var user in Users.OrderByDescending(u => u.Name?.Length))
                             {
-                                if (user.Name != null && match.FirstUser != null &&
-                                    user != NameUserTranslation[match.FirstUser] && (regexWithSpaceFullPost.Contains(" " + user.Name + " ") || regexWithSpaceFullPost.Contains(" " + UserWithSpaceTranslation[user.Name] + " ")))
+                                if (IsUserPartOfPost(match.FirstUser, user, regexWithSpaceFullPost))
                                 {
                                     match.SecondUser = user.Name;
                                     notExistingMatch = false;
@@ -704,13 +698,13 @@ namespace TournamentParser.ThreadScanner
                                 }
                             }
                             match.PostDate = lineDataHandler.PostDate;
-                            if (match.FirstUser != null)
+                            if (match.FirstUser != null && NameUserTranslation.TryGetValue(match.FirstUser, out User? firstUserVal))
                             {
-                                NameUserTranslation[match.FirstUser].Matches.Add(match);
+                                firstUserVal.Matches.Add(match);
                             }
-                            if (match.SecondUser != null)
+                            if (match.SecondUser != null && NameUserTranslation.TryGetValue(match.SecondUser, out User? secondUserVal))
                             {
-                                NameUserTranslation[match.SecondUser].Matches.Add(match);
+                                secondUserVal.Matches.Add(match);
                             }
                         }
 
@@ -746,6 +740,25 @@ namespace TournamentParser.ThreadScanner
                     }
                 }
             }
+        }
+
+        private bool IsUserPartOfPost(string? userString, User compareUser, string regexWithSpaceFullPost)
+        {
+            if (userString is not null && NameUserTranslation.TryGetValue(userString, out User? parsedUser))
+            {
+                if (parsedUser.Name is not null)
+                {
+                    var returnBool = true;
+                    returnBool = returnBool && parsedUser != compareUser;
+                    var regexBool = regexWithSpaceFullPost.Contains(" " + compareUser.Name + " ");
+                    if (compareUser.Name is not null && UserWithSpaceTranslation.TryGetValue(compareUser.Name, out string? userName))
+                    {
+                        regexBool = regexBool || regexWithSpaceFullPost.Contains(" " + userName + " ");
+                    }
+                    return returnBool && regexBool;
+                }
+            }
+            return false;
         }
 
         private static string FilterOutTierDefinition(string line)
