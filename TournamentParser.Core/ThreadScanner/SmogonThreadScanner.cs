@@ -31,6 +31,8 @@ namespace TournamentParser.ThreadScanner
 
         private readonly RegexUtil _regexUtil = new();
 
+        private const string ShowdownReplayString = "replay.pokemonshowdown.com/";
+
         public async Task ScanThreads(IDictionary<string, List<string>> threadsForForums)
         {
             await Parallel.ForEachAsync(
@@ -285,15 +287,21 @@ namespace TournamentParser.ThreadScanner
             }
             else if (
                 (_regexUtil.StripHTML(line).Contains(GetMatchFilterString(line)))
-                && (lineDataHandler.PostNumber == 1 || lineDataHandler.PostNumber == 2 || url.Contains("-replay"))
+                && IsReplayCollectionPost(url, lineDataHandler)
             )
             {
                 var match = DetermineMatch(line, thread, currentlyUserToMatch, lineDataHandler);
-                AnalyzeWhatToKeep(currentlyUserToMatch, match);
+                lineDataHandler.LastMatch = AnalyzeWhatToKeep(currentlyUserToMatch, match);
+            }
+            else if (lineDataHandler.LastMatch != null && IsReplayCollectionPost(url, lineDataHandler) && line.Contains(ShowdownReplayString))
+            {
+                AddReplays(line, lineDataHandler.LastMatch);
             }
             else
             {
                 keepLine = false;
+                // Reset if replay does not come directly afterwards
+                lineDataHandler.LastMatch = null;
             }
 
             if (lineDataHandler.TakePost && !line.Contains("/likes\""))
@@ -308,7 +316,12 @@ namespace TournamentParser.ThreadScanner
             }
         }
 
-        private void AnalyzeWhatToKeep(Dictionary<string, List<Match>> currentlyUserToMatch, Match match)
+        private static bool IsReplayCollectionPost(string url, LineDataHandler lineDataHandler)
+        {
+            return lineDataHandler.PostNumber == 1 || lineDataHandler.PostNumber == 2 || url.Contains("-replay");
+        }
+
+        private Match AnalyzeWhatToKeep(Dictionary<string, List<Match>> currentlyUserToMatch, Match match)
         {
             Match? toKeep = null;
             Match? toLoose = null;
@@ -370,6 +383,7 @@ namespace TournamentParser.ThreadScanner
                     }
                 }
             }
+            return toKeep ?? match;
         }
 
         private Match DetermineMatch(string line, Thread thread, Dictionary<string, List<Match>> currentlyUserToMatch, LineDataHandler lineDataHandler)
@@ -516,12 +530,12 @@ namespace TournamentParser.ThreadScanner
 
         private static void AddReplays(string line, Match match)
         {
-            if (line.Contains("replay.pokemonshowdown.com/"))
+            if (line.Contains(ShowdownReplayString))
             {
                 var tempLine = line;
-                while (tempLine.Contains("replay.pokemonshowdown.com/"))
+                while (tempLine.Contains(ShowdownReplayString))
                 {
-                    tempLine = tempLine[tempLine.IndexOf("replay.pokemonshowdown.com/")..];
+                    tempLine = tempLine[tempLine.IndexOf(ShowdownReplayString)..];
                     var quot = tempLine.Contains('"') ? tempLine.IndexOf(Common.Quotation) : int.MaxValue;
                     var arrow = tempLine.Contains('<') ? tempLine.IndexOf("<") : int.MaxValue;
                     string link;
@@ -657,7 +671,7 @@ namespace TournamentParser.ThreadScanner
                 var regexFullPost = _regexUtil.Regex(_regexUtil.StripHTML(fullPostString));
                 var regexWithSpaceFullPost = _regexUtil.RegexWithSpace(_regexUtil.StripHTML(fullPostString)).Replace(_regexUtil.RegexWithSpace(currentUser.NormalName), "").Replace(_regexUtil.Regex(currentUser.NormalName), "");
                 regexWithSpaceFullPost = _regexUtil.RemoveReactions(regexWithSpaceFullPost);
-                if (fullPostString.Contains("replay.pokemonshowdown.com/") && lineDataHandler.PostNumber != 1)
+                if (fullPostString.Contains(ShowdownReplayString) && lineDataHandler.PostNumber != 1)
                 {
                     var notExistingMatch = true;
                     var match = new Match();
@@ -709,9 +723,9 @@ namespace TournamentParser.ThreadScanner
                         }
 
                         var tempLine = fullPostString;
-                        while (tempLine.Contains("replay.pokemonshowdown.com/"))
+                        while (tempLine.Contains(ShowdownReplayString))
                         {
-                            tempLine = tempLine[tempLine.IndexOf("replay.pokemonshowdown.com/")..];
+                            tempLine = tempLine[tempLine.IndexOf(ShowdownReplayString)..];
                             var quot = tempLine.Contains('"') ? tempLine.IndexOf(Common.Quotation) : int.MaxValue;
                             var arrow = tempLine.Contains('<') ? tempLine.IndexOf("<") : int.MaxValue;
                             string link;

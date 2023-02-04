@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using TournamentParser.Data;
 
 namespace TournamentParser.Core.Data
 {
@@ -23,5 +24,6 @@ namespace TournamentParser.Core.Data
         public bool CanTakeReplay { get; set; }
         public int DataUserId { get; set; } = -1;
         public string UserLink { get; set; } = "";
+        public Match? LastMatch { get; set; } = null;
     }
 }
