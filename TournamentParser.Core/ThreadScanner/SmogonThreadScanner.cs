@@ -146,7 +146,7 @@ namespace TournamentParser.ThreadScanner
             var collectedLinks = new List<string>();
             try
             {
-                var currentlyUserToMatch = new Dictionary<string, List<Match>>();
+                var currentlyUserToMatch = new Dictionary<string, List<TournamentMatch>>();
                 var thread = new Thread();
                 var id = url[(url.LastIndexOf(".") + 1)..];
                 if (id.Contains('/'))
@@ -193,7 +193,7 @@ namespace TournamentParser.ThreadScanner
         {
             return Task.Run(() =>
             {
-                var currentlyUserToMatch = new Dictionary<string, List<Match>>();
+                var currentlyUserToMatch = new Dictionary<string, List<TournamentMatch>>();
                 var thread = new Thread();
                 var id = url[(url.LastIndexOf(".") + 1)..];
                 if (id.Contains('/'))
@@ -218,7 +218,7 @@ namespace TournamentParser.ThreadScanner
             }, ct);
         }
 
-        private void HandleLine(string url, string line, Thread thread, Dictionary<string, List<Match>> currentlyUserToMatch, LineDataHandler lineDataHandler)
+        private void HandleLine(string url, string line, Thread thread, Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, LineDataHandler lineDataHandler)
         {
             var keepLine = true;
             if (line.Contains("\"articleBody\": \""))
@@ -321,10 +321,10 @@ namespace TournamentParser.ThreadScanner
             return lineDataHandler.PostNumber == 1 || lineDataHandler.PostNumber == 2 || url.Contains("-replay");
         }
 
-        private Match AnalyzeWhatToKeep(Dictionary<string, List<Match>> currentlyUserToMatch, Match match)
+        private TournamentMatch AnalyzeWhatToKeep(Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, TournamentMatch match)
         {
-            Match? toKeep = null;
-            Match? toLoose = null;
+            TournamentMatch? toKeep = null;
+            TournamentMatch? toLoose = null;
             if (match.FirstUser != null && NameUserTranslation.ContainsKey(match.FirstUser))
             {
                 foreach (var otherMatch in NameUserTranslation[match.FirstUser].Matches.Where((match) => !match.Irrelevant))
@@ -386,9 +386,9 @@ namespace TournamentParser.ThreadScanner
             return toKeep ?? match;
         }
 
-        private Match DetermineMatch(string line, Thread thread, Dictionary<string, List<Match>> currentlyUserToMatch, LineDataHandler lineDataHandler)
+        private TournamentMatch DetermineMatch(string line, Thread thread, Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, LineDataHandler lineDataHandler)
         {
-            var match = new Match();
+            var match = new TournamentMatch();
 
             if (thread.Locked)
             {
@@ -414,7 +414,7 @@ namespace TournamentParser.ThreadScanner
             return match;
         }
 
-        private void SetupUsers(Dictionary<string, List<Match>> currentlyUserToMatch, Match match, string toFilterFor, string preparedLine)
+        private void SetupUsers(Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, TournamentMatch match, string toFilterFor, string preparedLine)
         {
             var userOne = preparedLine[..preparedLine.IndexOf(" " + toFilterFor + " ")];
             var userTwo = preparedLine[(preparedLine.IndexOf(" " + toFilterFor + " ") + (" " + toFilterFor + " ").Length)..];
@@ -428,13 +428,13 @@ namespace TournamentParser.ThreadScanner
             var regexUserOne = _regexUtil.Regex(userOne);
             var regexUserTwo = _regexUtil.Regex(userTwo);
 
-            if (NameUserTranslation.ContainsKey(regexUserOne))
+            if (NameUserTranslation.TryGetValue(regexUserOne, out User? firstUser))
             {
-                match.FirstUser = NameUserTranslation[regexUserOne].Name;
+                match.FirstUser = firstUser.Name;
             }
             else
             {
-                var firstUser = new User
+                firstUser = new User
                 {
                     NormalName = userOne,
                     Name = regexUserOne
@@ -456,23 +456,23 @@ namespace TournamentParser.ThreadScanner
                 }
                 UserWithSpaceTranslation.TryAdd(regexUserOne, _regexUtil.RegexWithSpace(userOne));
             }
-            NameUserTranslation[regexUserOne].Matches.Add(match);
+            firstUser.Matches.Add(match);
             if (currentlyUserToMatch.ContainsKey(regexUserOne))
             {
                 currentlyUserToMatch[regexUserOne].Add(match);
             }
             else
             {
-                currentlyUserToMatch.Add(regexUserOne, new List<Match>() { match });
+                currentlyUserToMatch.Add(regexUserOne, new List<TournamentMatch>() { match });
             }
 
-            if (NameUserTranslation.ContainsKey(regexUserTwo))
+            if (NameUserTranslation.TryGetValue(regexUserTwo, out User? secondUser))
             {
-                match.SecondUser = NameUserTranslation[regexUserTwo].Name;
+                match.SecondUser = secondUser.Name;
             }
             else
             {
-                var secondUser = new User
+                secondUser = new User
                 {
                     NormalName = userTwo,
                     Name = regexUserTwo
@@ -494,18 +494,18 @@ namespace TournamentParser.ThreadScanner
                 }
                 UserWithSpaceTranslation.TryAdd(regexUserTwo, _regexUtil.RegexWithSpace(userTwo));
             }
-            NameUserTranslation[regexUserTwo].Matches.Add(match);
+            secondUser.Matches.Add(match);
             if (currentlyUserToMatch.ContainsKey(regexUserTwo))
             {
                 currentlyUserToMatch[regexUserTwo].Add(match);
             }
             else
             {
-                currentlyUserToMatch.Add(regexUserTwo, new List<Match>() { match });
+                currentlyUserToMatch.Add(regexUserTwo, new List<TournamentMatch>() { match });
             }
         }
 
-        private void DetermineWinner(string line, Match match)
+        private void DetermineWinner(string line, TournamentMatch match)
         {
             if (line.Contains("<b>") || line.Contains("</b>"))
             {
@@ -528,7 +528,7 @@ namespace TournamentParser.ThreadScanner
             }
         }
 
-        private static void AddReplays(string line, Match match)
+        private static void AddReplays(string line, TournamentMatch match)
         {
             if (line.Contains(ShowdownReplayString))
             {
@@ -586,10 +586,11 @@ namespace TournamentParser.ThreadScanner
             return toFilterFor;
         }
 
-        private void DetermineIfPostAboutMatch(Thread thread, Dictionary<string, List<Match>> currentlyUserToMatch, LineDataHandler lineDataHandler)
+        private void DetermineIfPostAboutMatch(Thread thread, Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, LineDataHandler lineDataHandler)
         {
             if (lineDataHandler.DataUserId != 0)
             {
+                User? currentUser = null;
                 var postedByRegex = _regexUtil.Regex(lineDataHandler.PostedBy);
                 if (!IdUserTranslation.ContainsKey(lineDataHandler.DataUserId))
                 {
@@ -616,15 +617,17 @@ namespace TournamentParser.ThreadScanner
                         {
                             Users.Add(newUser);
                         }
+                        currentUser = newUser;
 
                         UserWithSpaceTranslation.TryAdd(postedByRegex, _regexUtil.RegexWithSpace(lineDataHandler.PostedBy));
                         IdUserTranslation.TryAdd(lineDataHandler.DataUserId, newUser);
                     }
                     else
                     {
-                        var existingUser = NameUserTranslation[postedByRegex];
+                        NameUserTranslation.TryGetValue(postedByRegex, out User? existingUser);
+                        currentUser = existingUser;
 
-                        if (existingUser.ProfileLink == null)
+                        if (existingUser is not null && existingUser.ProfileLink is null)
                         {
                             existingUser.Id = lineDataHandler.DataUserId;
                             existingUser.ProfileLink = lineDataHandler.UserLink;
@@ -632,7 +635,7 @@ namespace TournamentParser.ThreadScanner
                         }
                         else
                         {
-                            Console.WriteLine("Strange behavior with User: " + existingUser.Name);
+                            Console.WriteLine("Strange behavior with User: " + existingUser?.Name);
                         }
                     }
                 }
@@ -642,7 +645,7 @@ namespace TournamentParser.ThreadScanner
                     {
                         var existingUser = IdUserTranslation[lineDataHandler.DataUserId];
 
-                        if (existingUser.Name == null)
+                        if (existingUser.Name is null)
                         {
                             existingUser.NormalName = lineDataHandler.PostedBy;
                             existingUser.Name = postedByRegex;
@@ -659,6 +662,7 @@ namespace TournamentParser.ThreadScanner
                         {
                             Console.WriteLine("Strange behavior with User: " + existingUser.Name);
                         }
+                        currentUser = existingUser;
                     }
                     else
                     {
@@ -666,15 +670,18 @@ namespace TournamentParser.ThreadScanner
                     }
                 }
 
-                var currentUser = NameUserTranslation[postedByRegex];
+                if (currentUser is null)
+                {
+                    NameUserTranslation.TryGetValue(postedByRegex, out currentUser);
+                }
                 var fullPostString = lineDataHandler.FullPost.ToString();
                 var regexFullPost = _regexUtil.Regex(_regexUtil.StripHTML(fullPostString));
                 var regexWithSpaceFullPost = _regexUtil.RegexWithSpace(_regexUtil.StripHTML(fullPostString)).Replace(_regexUtil.RegexWithSpace(currentUser.NormalName), "").Replace(_regexUtil.Regex(currentUser.NormalName), "");
                 regexWithSpaceFullPost = _regexUtil.RemoveReactions(regexWithSpaceFullPost);
-                if (fullPostString.Contains(ShowdownReplayString) && lineDataHandler.PostNumber != 1)
+                if (fullPostString.Contains(ShowdownReplayString) && lineDataHandler.PostNumber != 1 && currentUser is not null)
                 {
                     var notExistingMatch = true;
-                    var match = new Match();
+                    var match = new TournamentMatch();
                     if (currentlyUserToMatch.ContainsKey(postedByRegex))
                     {
                         foreach (var currentMatch in currentlyUserToMatch[postedByRegex])
@@ -694,9 +701,9 @@ namespace TournamentParser.ThreadScanner
                         }
                         if (notExistingMatch)
                         {
-                            match = new Match
+                            match = new TournamentMatch
                             {
-                                FirstUser = NameUserTranslation[postedByRegex].Name,
+                                FirstUser = currentUser.Name,
                                 Thread = thread,
                                 Finished = true,
                             };
@@ -712,11 +719,8 @@ namespace TournamentParser.ThreadScanner
                                 }
                             }
                             match.PostDate = lineDataHandler.PostDate;
-                            if (match.FirstUser != null && NameUserTranslation.TryGetValue(match.FirstUser, out User? firstUserVal))
-                            {
-                                firstUserVal.Matches.Add(match);
-                            }
-                            if (match.SecondUser != null && NameUserTranslation.TryGetValue(match.SecondUser, out User? secondUserVal))
+                            currentUser.Matches.Add(match);
+                            if (match.SecondUser is not null && NameUserTranslation.TryGetValue(match.SecondUser, out User? secondUserVal))
                             {
                                 secondUserVal.Matches.Add(match);
                             }

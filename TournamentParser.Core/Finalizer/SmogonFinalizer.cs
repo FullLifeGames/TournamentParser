@@ -14,7 +14,7 @@ namespace TournamentParser.Finalizer
         {
             foreach (var user in nameUserTranslation.Values)
             {
-                user.Matches = new ConcurrentBag<Match>(user.Matches.Where((match) => !match.Irrelevant));
+                user.Matches = new ConcurrentBag<TournamentMatch>(user.Matches.Where((match) => !match.Irrelevant));
                 foreach (var match in user.Matches)
                 {
                     if (match.Winner == null)

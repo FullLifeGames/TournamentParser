@@ -14,7 +14,7 @@ namespace TournamentParser.Data
         [JsonProperty("o")]
         public string? NormalName { get; set; }
         [JsonProperty("m")]
-        public ConcurrentBag<Match> Matches { get; set; } = new ConcurrentBag<Match>();
+        public ConcurrentBag<TournamentMatch> Matches { get; set; } = new ConcurrentBag<TournamentMatch>();
 
         public override string ToString()
         {

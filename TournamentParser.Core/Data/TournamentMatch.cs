@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 namespace TournamentParser.Data
 {
-    public class Match
+    public class TournamentMatch
     {
         [JsonProperty("r")]
         public ICollection<string> Replays { get; set; } = new List<string>();
