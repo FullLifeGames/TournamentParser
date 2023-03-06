@@ -9,7 +9,7 @@
 		<RepositoryUrl>https://github.com/FullLifeGames/TournamentParser</RepositoryUrl>
 		<PackageTags>Smogon Tournament Parser</PackageTags>
 		<RepositoryType>GitHub</RepositoryType>
-		<PackageVersion>2.0.4</PackageVersion>
+		<PackageVersion>2.0.5</PackageVersion>
 		<Nullable>enable</Nullable>
 	</PropertyGroup>
 	<ItemGroup>

@@ -108,6 +108,20 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void Single_Replay_Thread_Test()
+        {
+            var tournament = new SmogonParser();
+
+            tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/spl-xiii-replays.3695657/", new CancellationToken()).Wait();
+
+            var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
+            Assert.IsTrue(playingUsers.Count() > 15);
+            var singleUser = playingUsers.First((user) => user.Name == "xray");
+            Assert.IsTrue(singleUser.Matches.First().Replays.Count > 0);
+            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+        }
+
+        [Test]
         public void Single_Scanner_Doubles_Correct_Info_Test()
         {
             var tournament = new SmogonParser();

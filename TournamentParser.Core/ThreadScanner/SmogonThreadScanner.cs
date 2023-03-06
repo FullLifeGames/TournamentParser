@@ -35,6 +35,8 @@ namespace TournamentParser.ThreadScanner
 
         public async Task ScanThreads(IDictionary<string, List<string>> threadsForForums)
         {
+            var toSet = new Dictionary<string, string>();
+
             await Parallel.ForEachAsync(
                 threadsForForums.SelectMany(thread => thread.Value),
                 async (url, ct) =>
@@ -50,13 +52,23 @@ namespace TournamentParser.ThreadScanner
                     else
                     {
                         analyzeResult = await AnalyzeTopic(url, ct).ConfigureAwait(false);
-                        _cache?.SetString(url, JsonConvert.SerializeObject(analyzeResult));
+                        if (!toSet.ContainsKey(url))
+                        {
+                            toSet.Add(url, JsonConvert.SerializeObject(analyzeResult));
+                        }
                     }
                     var nowUsers = Users.Count;
                     Console.WriteLine("Added " + (nowUsers - previousUsers) + " Users on " + url);
                     Console.WriteLine();
                 }
             ).ConfigureAwait(false);
+
+            Console.WriteLine("Writing to cache");
+            foreach (var settingValue in toSet)
+            {
+                _cache?.SetString(settingValue.Key, settingValue.Value);
+            }
+            Console.WriteLine("Wrote to cache");
         }
 
         private async Task<bool> LastIdIsCurrent(string fullUrl)
