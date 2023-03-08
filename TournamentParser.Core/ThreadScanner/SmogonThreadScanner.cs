@@ -548,14 +548,14 @@ namespace TournamentParser.ThreadScanner
                 while (tempLine.Contains(ShowdownReplayString))
                 {
                     tempLine = tempLine[tempLine.IndexOf(ShowdownReplayString)..];
-                    var quot = tempLine.Contains('"') ? tempLine.IndexOf(Common.Quotation) : int.MaxValue;
-                    var arrow = tempLine.Contains('<') ? tempLine.IndexOf("<") : int.MaxValue;
-                    string link;
-                    if (arrow < quot)
+                    var quot = tempLine.Contains(Common.Quotation) ? tempLine.IndexOf(Common.Quotation) : int.MaxValue;
+                    var leftArrow = tempLine.Contains('<') ? tempLine.IndexOf("<") : int.MaxValue;
+                    var link = tempLine;
+                    if (leftArrow < quot)
                     {
                         link = tempLine[..tempLine.IndexOf("<")];
                     }
-                    else
+                    else if (quot != int.MaxValue)
                     {
                         link = tempLine[..tempLine.IndexOf(Common.Quotation)];
                     }
@@ -564,13 +564,18 @@ namespace TournamentParser.ThreadScanner
                         match.Replays.Add("https://" + link);
                         match.Finished = true;
                     }
-                    if (arrow < quot)
+                    if (leftArrow < quot)
                     {
                         tempLine = tempLine[tempLine.IndexOf("<")..];
                     }
-                    else
+                    else if (quot != int.MaxValue)
                     {
                         tempLine = tempLine[tempLine.IndexOf(Common.Quotation)..];
+                    }
+                    else
+                    {
+                        // Weird behavior
+                        tempLine = tempLine[ShowdownReplayString.Length..];
                     }
                 }
             }
