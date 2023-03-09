@@ -1,4 +1,5 @@
 ﻿using System.Net.Http;
+using System.Threading.Tasks;
 using TournamentParser.Core.Util;
 
 namespace TournamentParser.Util
@@ -14,6 +15,8 @@ namespace TournamentParser.Util
             }
             set => _httpClient = value;
         }
+
+        public static ParallelOptions ParallelOptions { get; set; } = new();
 
         public const string OfficialTournamentSite = "http://www.smogon.com/forums/forums/tournaments.34/";
         public const char Quotation = '"';

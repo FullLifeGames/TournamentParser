@@ -39,6 +39,7 @@ namespace TournamentParser.ThreadScanner
 
             await Parallel.ForEachAsync(
                 threadsForForums.SelectMany(thread => thread.Value),
+                Common.ParallelOptions,
                 async (url, ct) =>
                 {
                     Console.WriteLine("Currently Scanning: " + url);

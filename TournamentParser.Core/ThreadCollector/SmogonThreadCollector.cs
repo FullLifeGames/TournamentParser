@@ -56,7 +56,7 @@ namespace TournamentParser.ThreadCollector
             }
 
             var threadsForForums = new ConcurrentDictionary<string, List<string>>();
-            await Parallel.ForEachAsync(tournamentToLinks, async (kv, ct) =>
+            await Parallel.ForEachAsync(tournamentToLinks, Common.ParallelOptions, async (kv, ct) =>
             {
                 threadsForForums.AddOrUpdate(kv.Value, new List<string>(), (_, oldValue) => oldValue);
                 var site = await Common.HttpClient.GetStringAsync(kv.Value, ct).ConfigureAwait(false);
