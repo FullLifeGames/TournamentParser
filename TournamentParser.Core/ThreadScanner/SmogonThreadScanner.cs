@@ -304,7 +304,8 @@ namespace TournamentParser.ThreadScanner
             )
             {
                 var match = DetermineMatch(line, thread, currentlyUserToMatch, lineDataHandler);
-                lineDataHandler.LastMatch = AnalyzeWhatToKeep(currentlyUserToMatch, match);
+                // Uncommented as this expects to remove replay thread matches
+                //lineDataHandler.LastMatch = AnalyzeWhatToKeep(currentlyUserToMatch, match);
             }
             else if (lineDataHandler.LastMatch != null && IsReplayCollectionPost(url, lineDataHandler) && line.Contains(ShowdownReplayString))
             {
