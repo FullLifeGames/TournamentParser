@@ -31,7 +31,7 @@ namespace TournamentParser.Tests
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.IsTrue(playingUsers.Count() == 2);
             Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count == 3);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -50,7 +50,7 @@ namespace TournamentParser.Tests
                 )
                 .Replays.Count == 3
             );
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -63,7 +63,7 @@ namespace TournamentParser.Tests
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.IsTrue(playingUsers.Count() > 20);
             Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count > 0);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -91,7 +91,7 @@ namespace TournamentParser.Tests
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.IsTrue(playingUsers.Count() > 20);
             Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count > 0);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -104,7 +104,7 @@ namespace TournamentParser.Tests
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.IsTrue(playingUsers.Count() > 15);
             Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count > 0);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -116,9 +116,10 @@ namespace TournamentParser.Tests
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.IsTrue(playingUsers.Count() > 15);
+            Assert.IsTrue(playingUsers.Count((user) => user.Matches.Any((match) => match.Replays.Count > 0)) > 100);
             var singleUser = playingUsers.First((user) => user.Name == "xray");
             Assert.IsTrue(singleUser.Matches.First().Replays.Count > 0);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -144,7 +145,20 @@ namespace TournamentParser.Tests
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.IsTrue(playingUsers.Count() > 100);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Count > 0);
+            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+        }
+
+        [Test]
+        public void Single_Scanner_Stress_Test_2()
+        {
+            var tournament = new SmogonParser();
+
+            tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/the-uu-open-xii-round-2-replays-mandatory-no-exceptions.3721437/", new CancellationToken()).Wait();
+
+            var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
+            Assert.IsTrue(playingUsers.Count() > 100);
+            Assert.IsTrue(playingUsers.Count((user) => user.Matches.Any((match) => match.Replays.Count > 0)) > 100);
+            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]

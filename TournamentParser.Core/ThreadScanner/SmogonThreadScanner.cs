@@ -272,7 +272,7 @@ namespace TournamentParser.ThreadScanner
                 lineDataHandler.PostDate = DateTime.ParseExact(temp, "MMM d, yyyy h:mm tt", CultureInfo.GetCultureInfo("en-US"));
                 lineDataHandler.TimerHeader = false;
             }
-            else if (line.StartsWith("\t</article>") && !url.Contains("-replay"))
+            else if (line.StartsWith("\t</article>"))
             {
                 lineDataHandler.PostStarted = false;
                 lineDataHandler.CanTakeReplay = false;
@@ -303,10 +303,7 @@ namespace TournamentParser.ThreadScanner
                 && IsReplayCollectionPost(url, lineDataHandler)
             )
             {
-                var match = DetermineMatch(line, thread, currentlyUserToMatch, lineDataHandler);
-                lineDataHandler.LastMatch = match;
-                // Uncommented as this expects to remove replay thread matches
-                //lineDataHandler.LastMatch = AnalyzeWhatToKeep(currentlyUserToMatch, match);
+                lineDataHandler.LastMatch = DetermineMatch(line, thread, currentlyUserToMatch, lineDataHandler);
             }
             else if (lineDataHandler.LastMatch != null && IsReplayCollectionPost(url, lineDataHandler) && line.Contains(ShowdownReplayString))
             {
@@ -334,71 +331,6 @@ namespace TournamentParser.ThreadScanner
         private static bool IsReplayCollectionPost(string url, LineDataHandler lineDataHandler)
         {
             return lineDataHandler.PostNumber == 1 || lineDataHandler.PostNumber == 2 || url.Contains("-replay");
-        }
-
-        private TournamentMatch AnalyzeWhatToKeep(Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, TournamentMatch match)
-        {
-            TournamentMatch? toKeep = null;
-            TournamentMatch? toLoose = null;
-            if (match.FirstUser != null && NameUserTranslation.ContainsKey(match.FirstUser))
-            {
-                foreach (var otherMatch in NameUserTranslation[match.FirstUser].Matches.Where((match) => !match.Irrelevant))
-                {
-                    if (otherMatch != match)
-                    {
-                        if (otherMatch.FirstUser == match.FirstUser && otherMatch.SecondUser == match.SecondUser)
-                        {
-                            // A week between the matches post date is apart => VERY strong correlation, so assuming they are the same matches (or replays are the same => so probably the same game)
-                            if ((otherMatch.PostDate.AddDays(7) >= match.PostDate && otherMatch.PostDate.AddDays(-7) <= match.PostDate) || (otherMatch.Replays.Count > 0 && otherMatch.Replays.SequenceEqual(match.Replays)))
-                            {
-                                if (otherMatch.PostDate > match.PostDate)
-                                {
-                                    toKeep = match;
-                                    toLoose = otherMatch;
-                                }
-                                else
-                                {
-                                    toKeep = otherMatch;
-                                    toLoose = match;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            if (toKeep != null && toLoose != null)
-            {
-                foreach (var replay in toLoose.Replays)
-                {
-                    if (!toKeep.Replays.Contains(replay))
-                    {
-                        toKeep.Replays.Add(replay);
-                    }
-                }
-                if (toKeep.Winner == null && toLoose.Winner != null)
-                {
-                    toKeep.Winner = toLoose.Winner;
-                }
-                toLoose.Irrelevant = true;
-                if (toKeep.FirstUser != null && currentlyUserToMatch.ContainsKey(toKeep.FirstUser))
-                {
-                    currentlyUserToMatch[toKeep.FirstUser].Remove(toLoose);
-                    if (!currentlyUserToMatch[toKeep.FirstUser].Contains(toKeep))
-                    {
-                        currentlyUserToMatch[toKeep.FirstUser].Add(toKeep);
-                    }
-                }
-                if (toKeep.SecondUser != null && currentlyUserToMatch.ContainsKey(toKeep.SecondUser))
-                {
-                    currentlyUserToMatch[toKeep.SecondUser].Remove(toLoose);
-                    if (!currentlyUserToMatch[toKeep.SecondUser].Contains(toKeep))
-                    {
-                        currentlyUserToMatch[toKeep.SecondUser].Add(toKeep);
-                    }
-                }
-            }
-            return toKeep ?? match;
         }
 
         private TournamentMatch DetermineMatch(string line, Thread thread, Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, LineDataHandler lineDataHandler)
@@ -696,7 +628,9 @@ namespace TournamentParser.ThreadScanner
                 }
                 var fullPostString = lineDataHandler.FullPost.ToString();
                 var regexFullPost = _regexUtil.Regex(_regexUtil.StripHTML(fullPostString));
-                var regexWithSpaceFullPost = _regexUtil.RegexWithSpace(_regexUtil.StripHTML(fullPostString)).Replace(_regexUtil.RegexWithSpace(currentUser.NormalName), "").Replace(_regexUtil.Regex(currentUser.NormalName), "");
+                var regexWithSpaceFullPost = _regexUtil.RegexWithSpace(_regexUtil.StripHTML(fullPostString))
+                    .Replace(_regexUtil.RegexWithSpace(currentUser!.NormalName), "")
+                    .Replace(_regexUtil.Regex(currentUser.NormalName), "");
                 regexWithSpaceFullPost = _regexUtil.RemoveReactions(regexWithSpaceFullPost);
                 if (fullPostString.Contains(ShowdownReplayString) && lineDataHandler.PostNumber != 1 && currentUser is not null)
                 {
