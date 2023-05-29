@@ -17,8 +17,9 @@ namespace TournamentParser.Core.Util
             Policy
                 .Handle<HttpRequestException>()
                 .Or<TaskCanceledException>()
+                .Or<TimeoutException>()
                 .OrResult<HttpResponseMessage>(x => !x.IsSuccessStatusCode)
-                .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(3, retryAttempt)))
+                .WaitAndRetryAsync(5, retryAttempt => TimeSpan.FromSeconds(Math.Pow(3, retryAttempt)))
                 .ExecuteAsync(() => base.SendAsync(request, cancellationToken));
     }
 }
