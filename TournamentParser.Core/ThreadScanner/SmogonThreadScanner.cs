@@ -67,7 +67,10 @@ namespace TournamentParser.ThreadScanner
             Console.WriteLine("Writing to cache");
             foreach (var settingValue in toSet)
             {
-                _cache?.SetString(settingValue.Key, settingValue.Value);
+                if (settingValue.Key is not null)
+                {
+                    _cache?.SetString(settingValue.Key, settingValue.Value);
+                }
             }
             Console.WriteLine("Wrote to cache");
         }
