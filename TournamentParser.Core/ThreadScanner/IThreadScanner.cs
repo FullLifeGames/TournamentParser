@@ -14,6 +14,6 @@ namespace TournamentParser.ThreadScanner
         public ConcurrentDictionary<string, string> UserWithSpaceTranslation { get; }
 
         Task ScanThreads(IDictionary<string, List<string>> threadsForForums);
-        Task<TopicAnalyzeResult> AnalyzeTopic(string url, System.Threading.CancellationToken ct);
+        Task<TopicAnalyzeResult?> AnalyzeTopic(string url, System.Threading.CancellationToken ct);
     }
 }

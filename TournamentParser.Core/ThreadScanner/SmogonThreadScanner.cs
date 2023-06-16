@@ -44,7 +44,7 @@ namespace TournamentParser.ThreadScanner
                 {
                     Console.WriteLine("Currently Scanning: " + url);
                     var previousUsers = Users.Count;
-                    TopicAnalyzeResult analyzeResult;
+                    TopicAnalyzeResult? analyzeResult;
                     if (await LastIdIsCurrent(url))
                     {
                         analyzeResult = JsonConvert.DeserializeObject<TopicAnalyzeResult>(_cache!.GetString(url)!)!;
@@ -53,7 +53,7 @@ namespace TournamentParser.ThreadScanner
                     else
                     {
                         analyzeResult = await AnalyzeTopic(url, ct).ConfigureAwait(false);
-                        if (!toSet.ContainsKey(url))
+                        if (analyzeResult is not null && !toSet.ContainsKey(url))
                         {
                             toSet.Add(url, JsonConvert.SerializeObject(analyzeResult));
                         }
@@ -155,7 +155,7 @@ namespace TournamentParser.ThreadScanner
             return pages;
         }
 
-        public async Task<TopicAnalyzeResult> AnalyzeTopic(string url, System.Threading.CancellationToken ct)
+        public async Task<TopicAnalyzeResult?> AnalyzeTopic(string url, System.Threading.CancellationToken ct)
         {
             var pages = 1;
             var latestPost = DateTime.UnixEpoch;
@@ -191,10 +191,11 @@ namespace TournamentParser.ThreadScanner
                     collectedLinks.Add(string.Join('\n', lineDataHandler.FullImportantSiteBits));
                 }
             }
-            catch (HttpRequestException e)
+            catch (Exception e)
             {
-                Console.WriteLine("HttpRequestException bei: " + url);
+                Console.WriteLine("Exception at: " + url);
                 Console.WriteLine(e.Message);
+                return null;
             }
 
             return new TopicAnalyzeResult()
