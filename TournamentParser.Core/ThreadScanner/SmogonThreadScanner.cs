@@ -5,7 +5,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using TournamentParser.Core.Data;
@@ -77,63 +76,35 @@ namespace TournamentParser.ThreadScanner
 
         private async Task<bool> LastIdIsCurrent(string fullUrl)
         {
-            if (_cache == null)
+            return await Task.Run(() =>
             {
-                return false;
-            }
-
-            string? cachedResults = null;
-            try
-            {
-                cachedResults = _cache.GetString(fullUrl);
-            }
-            catch (NullReferenceException)
-            {
-            }
-            if (cachedResults == null)
-            {
-                return false;
-            }
-
-            var analyzeResult = JsonConvert.DeserializeObject<TopicAnalyzeResult>(cachedResults);
-            if (analyzeResult == null)
-            {
-                return false;
-            }
-
-            // If the last post is older than one year, assumption is that no new activity with relevant matches will be posted
-            if (analyzeResult.LastPost < DateTime.Now.AddYears(-1))
-            {
-                return true;
-            }
-
-            var site = await Common.HttpClient.GetStringAsync(fullUrl + "page-" + analyzeResult.NumberOfPages).ConfigureAwait(false);
-            var numberOfPages = GetNumberOfPages(site);
-            if (numberOfPages != analyzeResult.NumberOfPages)
-            {
-                return false;
-            }
-
-            var lineDataHandler = new LineDataHandler();
-            foreach (var line in site.Split('\n'))
-            {
-                if (line.Contains("<header class=\"message-attribution message-attribution--split\">"))
+                if (_cache == null)
                 {
-                    lineDataHandler.TimerHeader = true;
+                    return false;
                 }
-                else if (line.Contains("data-date-string=\"") && lineDataHandler.TimerHeader)
-                {
-                    var temp = line[(line.IndexOf("data-date-string=\"") + "data-date-string=\"".Length)..];
-                    temp = temp[(temp.IndexOf("title") + "title".Length)..];
-                    temp = temp[(temp.IndexOf("\"") + 1)..];
-                    temp = temp[..temp.IndexOf("\"")];
-                    temp = temp.Replace("at ", "");
-                    lineDataHandler.PostDate = DateTime.ParseExact(temp, "MMM d, yyyy h:mm tt", CultureInfo.GetCultureInfo("en-US"));
-                    lineDataHandler.TimerHeader = false;
-                }
-            }
 
-            return lineDataHandler.PostDate == analyzeResult.LastPost;
+                string? cachedResults = null;
+                try
+                {
+                    cachedResults = _cache.GetString(fullUrl);
+                }
+                catch (NullReferenceException)
+                {
+                }
+                if (cachedResults == null)
+                {
+                    return false;
+                }
+
+                var analyzeResult = JsonConvert.DeserializeObject<TopicAnalyzeResult>(cachedResults);
+                if (analyzeResult == null)
+                {
+                    return false;
+                }
+
+                // If the last post is older than six months, assumption is that no new activity with relevant matches will be posted
+                return analyzeResult.LastPost < DateTime.Now.AddMonths(-6);
+            });
         }
 
         private static int GetNumberOfPages(string site)
