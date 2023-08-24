@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using TournamentParser.Util;
 
@@ -115,7 +116,13 @@ namespace TournamentParser.ThreadCollector
 
         public async Task<IDictionary<string, List<string>>> GetNonTourThreadsForForums()
         {
-            return await GetGeneralThreadsForForums("Smogon Metagames").ConfigureAwait(false);
+            var list = new Dictionary<string, List<string>>();
+            foreach (var thread in new [] { "Smogon Metagames", "Ruins of Alph", "Battle Stadium" })
+            {
+                var additionalList = await GetGeneralThreadsForForums(thread).ConfigureAwait(false);
+                additionalList.ToList().ForEach(x => list.Add(x.Key, x.Value));
+            }
+            return list;
         }
     }
 }
