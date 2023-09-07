@@ -278,7 +278,11 @@ namespace TournamentParser.ThreadScanner
                 && IsReplayCollectionPost(url, lineDataHandler)
             )
             {
-                lineDataHandler.LastMatch = DetermineMatch(line, thread, currentlyUserToMatch, lineDataHandler);
+                var newMatch = DetermineMatch(line, thread, currentlyUserToMatch, lineDataHandler);
+                if (newMatch.FirstUser is not null || newMatch.SecondUser is not null)
+                {
+                    lineDataHandler.LastMatch = newMatch;
+                }
             }
             else if (lineDataHandler.LastMatch != null && IsReplayCollectionPost(url, lineDataHandler) && line.Contains(ShowdownReplayString))
             {
@@ -331,6 +335,10 @@ namespace TournamentParser.ThreadScanner
 
                 match.Thread = thread;
                 match.PostDate = lineDataHandler.PostDate;
+            }
+            else if (lineDataHandler.LastMatch is not null)
+            {
+                AddReplays(line, lineDataHandler.LastMatch);
             }
 
             return match;
