@@ -17,8 +17,8 @@ namespace TournamentParser.Tests
             var threads = tournament.ThreadCollector.GetThreadsForForums().Result;
             var nonTourThreads = tournament.ThreadCollector.GetNonTourThreadsForForums().Result;
 
-            Assert.IsTrue(threads.Count > 0);
-            Assert.IsTrue(nonTourThreads.Count > 0);
+            Assert.That(threads.Count > 0);
+            Assert.That(nonTourThreads.Count > 0);
         }
 
         [Test]
@@ -29,9 +29,9 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/official-smogon-tournament-xvii-finals-won-by-empo.3680402/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() == 2);
-            Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count == 3);
-            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+            Assert.That(playingUsers.Count() == 2);
+            Assert.That(playingUsers.First().Matches.First().Replays.Count == 3);
+            Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -42,15 +42,15 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/smogon-tour-30-playoffs-finals-won-by-empo.3673513/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() > 10 && playingUsers.Count() < 20);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation["empo"].Matches
+            Assert.That(playingUsers.Count() > 10 && playingUsers.Count() < 20);
+            Assert.That(tournament.ThreadScanner.NameUserTranslation["empo"].Matches
                 .First((match) =>
                     string.Equals(match.SecondUser, "soulwind", System.StringComparison.OrdinalIgnoreCase)
                     || string.Equals(match.FirstUser, "soulwind", System.StringComparison.OrdinalIgnoreCase)
                 )
                 .Replays.Count == 3
             );
-            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+            Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -61,11 +61,11 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/callous-invitational-7-teams-replays-and-usage-statistics.3722746/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() > 10);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Any(x => x.Value.Matches
+            Assert.That(playingUsers.Count() > 10);
+            Assert.That(tournament.ThreadScanner.NameUserTranslation.Any(x => x.Value.Matches
                 .First().Replays.Any())
             );
-            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+            Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -76,9 +76,9 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/smogons-official-ladder-tournament-v-replay-thread.3640819/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() > 20);
-            Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count > 0);
-            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+            Assert.That(playingUsers.Count() > 20);
+            Assert.That(playingUsers.First().Matches.First().Replays.Count > 0);
+            Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -104,9 +104,9 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/smogons-official-ladder-tournament-v-replay-thread.3640819/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() > 20);
-            Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count > 0);
-            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+            Assert.That(playingUsers.Count() > 20);
+            Assert.That(playingUsers.First().Matches.First().Replays.Count > 0);
+            Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -117,9 +117,9 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/smogon-tour-season-29-playoffs-finals-won-by-abr.3664063/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() > 15);
-            Assert.IsTrue(playingUsers.First().Matches.First().Replays.Count > 0);
-            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+            Assert.That(playingUsers.Count() > 15);
+            Assert.That(playingUsers.First().Matches.First().Replays.Count > 0);
+            Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -130,11 +130,11 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/spl-xiii-replays.3695657/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() > 15);
-            Assert.IsTrue(playingUsers.Count((user) => user.Matches.Any((match) => match.Replays.Count > 0)) > 100);
+            Assert.That(playingUsers.Count() > 15);
+            Assert.That(playingUsers.Count((user) => user.Matches.Any((match) => match.Replays.Count > 0)) > 100);
             var singleUser = playingUsers.First((user) => user.Name == "xray");
-            Assert.IsTrue(singleUser.Matches.First().Replays.Count > 0);
-            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+            Assert.That(singleUser.Matches.First().Replays.Count > 0);
+            Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -146,9 +146,9 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/2021-doubles-invitational.3694498/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() > 15);
-            Assert.IsTrue(playingUsers.Any((user) => user.Matches.Any((match) => match.Replays.Count > 0)));
-            Assert.IsTrue(playingUsers.First((user) => user.Name == "crunchman").Matches.Count == 1);
+            Assert.That(playingUsers.Count() > 15);
+            Assert.That(playingUsers.Any((user) => user.Matches.Any((match) => match.Replays.Count > 0)));
+            Assert.That(playingUsers.First((user) => user.Name == "crunchman").Matches.Count == 1);
         }
 
         [Test]
@@ -159,8 +159,8 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/official-smogon-tournament-xvii-round-1-d.3676237/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() > 100);
-            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+            Assert.That(playingUsers.Count() > 100);
+            Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -171,9 +171,9 @@ namespace TournamentParser.Tests
             tournament.ThreadScanner.AnalyzeTopic("https://www.smogon.com/forums/threads/the-uu-open-xii-round-2-replays-mandatory-no-exceptions.3721437/", new CancellationToken()).Wait();
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
-            Assert.IsTrue(playingUsers.Count() > 100);
-            Assert.IsTrue(playingUsers.Count((user) => user.Matches.Any((match) => match.Replays.Count > 0)) > 100);
-            Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
+            Assert.That(playingUsers.Count() > 100);
+            Assert.That(playingUsers.Count((user) => user.Matches.Any((match) => match.Replays.Count > 0)) > 100);
+            Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
         [Test]
@@ -182,7 +182,7 @@ namespace TournamentParser.Tests
         {
             var matches = new SmogonParser().GetMatchesForUsers().Result;
 
-            Assert.IsTrue(matches.Count > 0);
+            Assert.That(matches.Count > 0);
         }
     }
 }
