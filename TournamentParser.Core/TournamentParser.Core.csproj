@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
-		<TargetFramework>net6.0</TargetFramework>
+		<TargetFramework>net8.0</TargetFramework>
 		<Description>This tool goes through all Smogon Tournament threads and parses the match and user information.</Description>
 		<Authors>FullLifeGames</Authors>
 		<Copyright>FullLifeGames</Copyright>

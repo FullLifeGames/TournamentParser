@@ -110,7 +110,8 @@ namespace TournamentParser.ThreadCollector
         {
             return await GetGeneralThreadsForForums("Tournaments", new Dictionary<string, string>()
             {
-                { "Standard Tournament Forums", Common.OfficialTournamentSite }
+                { "Standard Tournament Forums", Common.OfficialTournamentSite },
+                { "PS! Tournaments", "https://www.smogon.com/forums/forums/ps-tournaments.698/" }
             }).ConfigureAwait(false);
         }
 

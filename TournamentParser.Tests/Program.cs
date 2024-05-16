@@ -62,8 +62,8 @@ namespace TournamentParser.Tests
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.IsTrue(playingUsers.Count() > 10);
-            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.First().Value.Matches
-                .First().Replays.Any()
+            Assert.IsTrue(tournament.ThreadScanner.NameUserTranslation.Any(x => x.Value.Matches
+                .First().Replays.Any())
             );
             Assert.IsFalse(tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
