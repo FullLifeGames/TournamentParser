@@ -8,7 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NeoSmart.Caching.Sqlite" Version="6.1.0" />
+    <PackageReference Include="NeoSmart.Caching.Sqlite" Version="7.0.1" />
+    <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.1.7" />
   </ItemGroup>
 
   <ItemGroup>

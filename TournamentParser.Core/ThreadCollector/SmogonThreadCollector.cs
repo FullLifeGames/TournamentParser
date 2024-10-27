@@ -16,14 +16,20 @@ namespace TournamentParser.ThreadCollector
             var smogonMain = await Common.HttpClient.GetStringAsync("http://www.smogon.com/forums/").ConfigureAwait(false);
             var scanStartOne = false;
 
-            foreach (var line in smogonMain.Split('\n'))
+            var lines = smogonMain.Split('\n');
+            for (var i = 0; i < lines.Length; i++)
             {
+                var line = lines[i];
                 if (scanStartOne)
                 {
                     if (line.Contains("class=\"subNodeLink subNodeLink--forum"))
                     {
-                        var tourName = line[(line.IndexOf(">") + 1)..];
-                        tourName = tourName[..tourName.IndexOf("<")];
+                        var nextLine = lines[i + 1];
+                        var tourName = nextLine[(nextLine.LastIndexOf(">") + 1)..];
+                        if (tourName.Contains('<'))
+                        {
+                            tourName = tourName[..tourName.IndexOf("<")];
+                        }
 
                         var tourUrl = line[(line.IndexOf(Common.Quotation) + 1)..];
                         tourUrl = tourUrl[..tourUrl.IndexOf(Common.Quotation)];

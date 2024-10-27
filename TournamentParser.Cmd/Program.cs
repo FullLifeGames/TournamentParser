@@ -2,6 +2,8 @@
 using Newtonsoft.Json;
 using TournamentParser.Parser;
 
+SQLitePCL.Batteries_V2.Init();
+
 var tournament = new SmogonParser(
     new SqliteCache(
         new SqliteCacheOptions()

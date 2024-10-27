@@ -23,7 +23,7 @@ namespace TournamentParser.ThreadScanner
             _cache = cache;
         }
 
-        public ConcurrentBag<User> Users { get; } = new();
+        public ConcurrentBag<User> Users { get; } = [];
         public ConcurrentDictionary<string, User> NameUserTranslation { get; } = new ConcurrentDictionary<string, User>();
         public ConcurrentDictionary<int, User> IdUserTranslation { get; } = new ConcurrentDictionary<int, User>();
         public ConcurrentDictionary<string, string> UserWithSpaceTranslation { get; } = new ConcurrentDictionary<string, string>();
@@ -323,7 +323,7 @@ namespace TournamentParser.ThreadScanner
 
             var toFilterFor = GetMatchFilterString(line);
 
-            var preparedLine = FilterOutTierDefinition(_regexUtil.StripHTML(line));
+            var preparedLine = FilterOutTierDefinitionAndStrip(_regexUtil.StripHTML(line));
 
             if (preparedLine != toFilterFor && preparedLine.Contains(" " + toFilterFor + " "))
             {
@@ -646,15 +646,27 @@ namespace TournamentParser.ThreadScanner
                             };
 
                             // Order by name length of the users so that short common terms are ignored longer and bigger names can be respected
+                            var closest = int.MaxValue;
+                            User? closestUser = null;
                             foreach (var user in Users.OrderByDescending(u => u.Name?.Length))
                             {
                                 if (IsUserPartOfPost(match.FirstUser, user, regexWithSpaceFullPost))
                                 {
-                                    match.SecondUser = user.Name;
-                                    notExistingMatch = false;
-                                    break;
+                                    var closeIndex = regexWithSpaceFullPost.IndexOf(user?.Name ?? "notdefined");
+                                    if (closest > closeIndex)
+                                    {
+                                        closest = closeIndex;
+                                        closestUser = user;
+                                    }
                                 }
                             }
+
+                            if (closestUser is not null)
+                            {
+                                match.SecondUser = closestUser.Name;
+                                notExistingMatch = false;
+                            }
+
                             match.PostDate = lineDataHandler.PostDate;
                             currentUser.Matches.Add(match);
                             if (match.SecondUser is not null && NameUserTranslation.TryGetValue(match.SecondUser, out User? secondUserVal))
@@ -716,12 +728,16 @@ namespace TournamentParser.ThreadScanner
             return false;
         }
 
-        private static string FilterOutTierDefinition(string line)
+        private static string FilterOutTierDefinitionAndStrip(string line)
         {
             var tempLine = line;
             if (line.IndexOf(":") < line.Replace(".", "").IndexOf(" vs "))
             {
                 tempLine = tempLine[(tempLine.IndexOf(":") + 1)..];
+            }
+            if (tempLine.Contains('>'))
+            {
+                tempLine = tempLine[(tempLine.IndexOf(">") + 1)..];
             }
             return tempLine;
         }
