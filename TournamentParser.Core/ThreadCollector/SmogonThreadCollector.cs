@@ -40,7 +40,7 @@ namespace TournamentParser.ThreadCollector
                             tournamentToLinks.Add(tourName, tourUrl);
                         }
                     }
-                    else if (line.Contains("node-stats\""))
+                    else if (line.Contains("node-extra\""))
                     {
                         scanStartOne = false;
                     }
