@@ -222,8 +222,11 @@ namespace TournamentParser.ThreadScanner
         private void HandleLine(string url, string line, Thread thread, Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, LineDataHandler lineDataHandler)
         {
             var keepLine = true;
-            if (line.Contains("\"articleBody\": \""))
+            if (line.Contains("\"articleBody\": \"")
+                || (line.Contains("\"text\": \"") && line.TrimStart().StartsWith("\"text\": \"")))
             {
+                // XenForo's JSON-LD block inlines the whole first post as a single line;
+                // the field used to be called "articleBody" and is now called "text".
                 keepLine = false;
             }
             else if (line.Contains("<h1 class=\"p-title-value\">"))
@@ -250,14 +253,17 @@ namespace TournamentParser.ThreadScanner
             {
                 lineDataHandler.TimerHeader = true;
             }
-            else if (line.Contains("data-date-string=\"") && lineDataHandler.TimerHeader)
+            else if (lineDataHandler.TimerHeader && line.Contains("<time") && line.Contains("title=\""))
             {
-                var temp = line[(line.IndexOf("data-date-string=\"") + "data-date-string=\"".Length)..];
-                temp = temp[(temp.IndexOf("title") + "title".Length)..];
-                temp = temp[(temp.IndexOf(Common.Quotation) + 1)..];
+                // XenForo used to expose the post date via data-date-string; current markup
+                // only carries it in the <time> tag's title attribute ("MMM d, yyyy at h:mm tt").
+                var temp = line[(line.IndexOf("title=\"") + "title=\"".Length)..];
                 temp = temp[..temp.IndexOf(Common.Quotation)];
                 temp = temp.Replace("at ", "");
-                lineDataHandler.PostDate = DateTime.ParseExact(temp, "MMM d, yyyy h:mm tt", CultureInfo.GetCultureInfo("en-US"));
+                if (DateTime.TryParseExact(temp, "MMM d, yyyy h:mm tt", CultureInfo.GetCultureInfo("en-US"), DateTimeStyles.None, out var postDate))
+                {
+                    lineDataHandler.PostDate = postDate;
+                }
                 lineDataHandler.TimerHeader = false;
             }
             else if (line.StartsWith("\t</article>"))

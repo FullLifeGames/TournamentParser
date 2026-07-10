@@ -418,6 +418,15 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void FixtureScan_ParsesPostDatesFromModernTimeMarkup()
+        {
+            // Current XenForo pages have no data-date-string attribute; the post date must
+            // be read from the <time> tag's title attribute.
+            ScanFixtureThread(out _, out var result);
+            Assert.That(result.LastPost, Is.EqualTo(new DateTime(2021, 3, 31, 19, 51, 0)));
+        }
+
+        [Test]
         public void FixtureRescanFromCollectedLinks_ReproducesFreshScanState()
         {
             var scanner = ScanFixtureThread(out _, out var result);
@@ -436,6 +445,29 @@ namespace TournamentParser.Tests
                     Is.EqualTo(user.Matches.Sum(m => m.Replays.Count)),
                     $"replay count for {name}");
             }
+        }
+
+        [Test]
+        public void OltFixtureScan_JsonLdTextBlockDoesNotCreateGarbageUsers()
+        {
+            // XenForo's JSON-LD block now exposes the first post as a one-line "text": "..."
+            // field (formerly "articleBody"); it contains "x vs y" content and must not be
+            // parsed as a match line.
+            const string url = "https://www.smogon.com/forums/threads/smogons-official-ladder-tournament-v-replay-thread.3640819/";
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(url + "page-1", Fixture("olt-v-replay-page-1.html"));
+            Common.HttpClient = new HttpClient(fake);
+
+            var scanner = new SmogonThreadScanner();
+            var result = scanner.AnalyzeTopic(url, CancellationToken.None).Result;
+            Assert.That(result, Is.Not.Null);
+
+            var playingUsers = scanner.Users.Where(user => !user.Matches.IsEmpty).ToList();
+            Assert.That(playingUsers.Select(u => u.Name), Has.None.Contains("\n"),
+                "JSON-LD text block was parsed as a match line");
+            Assert.That(playingUsers, Has.Count.EqualTo(36));
+            Assert.That(playingUsers, Has.All.Matches<User>(u => u.Matches.Any(m => m.Replays.Count > 0)),
+                "every real OLT participant has at least one replay");
         }
 
         #endregion

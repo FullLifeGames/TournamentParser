@@ -38,7 +38,8 @@ namespace TournamentParser.Tests.TestSupport
                 sb.Append("\t<article class=\"message message--post js-post js-inlineModContainer  \"\n");
                 sb.Append($"\t\tdata-author=\"{post.Author}\"\n");
                 sb.Append("\t<header class=\"message-attribution message-attribution--split\">\n");
-                sb.Append($"<time class=\"u-dt\" dir=\"auto\" data-date-string=\"x\" title=\"{post.DateTitle}\">\n");
+                // Mirrors current XenForo output: no data-date-string attribute, full date in title.
+                sb.Append($"<time class=\"u-dt\" dir=\"auto\" datetime=\"2021-03-22T00:15:03-0400\" data-timestamp=\"1616386503\" data-date=\"Mar 22, 2021\" data-time=\"12:15 AM\" title=\"{post.DateTitle}\">\n");
                 sb.Append($"\t\t\t<h4 class=\"message-name\"><a href=\"/forums/members/{lowerName}.{post.UserId}/\" class=\"username \" dir=\"auto\" data-user-id=\"{post.UserId}\" data-xf-init=\"member-tooltip\">{post.Author}</a></h4>\n");
                 sb.Append("\t\t<article class=\"message-body js-selectToQuote\">\n");
                 foreach (var bodyLine in post.BodyLines)
