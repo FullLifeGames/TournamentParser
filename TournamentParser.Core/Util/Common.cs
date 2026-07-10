@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -29,6 +30,27 @@ namespace TournamentParser.Util
         public const string SmogonBaseUrl = "https://www.smogon.com";
         public const string OfficialTournamentSite = SmogonBaseUrl + "/forums/forums/tournaments.34/";
         public const char Quotation = '"';
+
+        /// <summary>
+        /// Enumerates the '\n'-separated segments of <paramref name="text"/> with the exact
+        /// semantics of text.Split('\n'), but one line at a time, so whole forum pages are
+        /// never materialized as arrays of line strings.
+        /// </summary>
+        public static IEnumerable<string> EnumerateLines(string text)
+        {
+            var start = 0;
+            while (true)
+            {
+                var newline = text.IndexOf('\n', start);
+                if (newline < 0)
+                {
+                    yield return text[start..];
+                    yield break;
+                }
+                yield return text[start..newline];
+                start = newline + 1;
+            }
+        }
 
         private const string InvalidFileNameChars = "\\/:*?\"<>|";
 

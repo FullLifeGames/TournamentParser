@@ -84,36 +84,44 @@ namespace TournamentParser.ThreadCollector
                 Console.WriteLine("Looking for scannable tournament threads in: " + kv.Value);
                 var beforeCount = threadsForForums[kv.Value].Count;
 
-                // Fetch listing pages concurrently, then process them in page order so the
-                // collected thread URLs keep their original ordering.
-                var listingPages = new string[pages];
+                // Fetch listing pages concurrently in bounded batches (memory), then process
+                // them in page order so the collected thread URLs keep their original ordering.
+                var batchSize = Common.ParallelOptions.MaxDegreeOfParallelism > 0
+                    ? Common.ParallelOptions.MaxDegreeOfParallelism
+                    : Environment.ProcessorCount;
                 var parallelOptions = new ParallelOptions
                 {
                     MaxDegreeOfParallelism = Common.ParallelOptions.MaxDegreeOfParallelism,
                     CancellationToken = ct,
                 };
-                await Parallel.ForEachAsync(Enumerable.Range(1, pages), parallelOptions, async (pageCount, innerCt) =>
+                for (var batchStart = 1; batchStart <= pages; batchStart += batchSize)
                 {
-                    listingPages[pageCount - 1] = await Common.HttpClient.GetStringAsync(kv.Value + "page-" + pageCount, innerCt).ConfigureAwait(false);
-                }).ConfigureAwait(false);
-
-                for (var pageCount = 1; pageCount <= pages; pageCount++)
-                {
-                    site = listingPages[pageCount - 1];
-
-                    foreach (var line in site.Split('\n'))
+                    var batchCount = Math.Min(batchSize, pages - batchStart + 1);
+                    var listingPages = new string[batchCount];
+                    await Parallel.ForEachAsync(Enumerable.Range(batchStart, batchCount), parallelOptions, async (pageCount, innerCt) =>
                     {
-                        if (line.Contains("data-preview-url"))
+                        listingPages[pageCount - batchStart] = await Common.HttpClient.GetStringAsync(kv.Value + "page-" + pageCount, innerCt).ConfigureAwait(false);
+                    }).ConfigureAwait(false);
+
+                    for (var pageIndex = 0; pageIndex < batchCount; pageIndex++)
+                    {
+                        site = listingPages[pageIndex];
+                        listingPages[pageIndex] = null!;
+
+                        foreach (var line in Common.EnumerateLines(site))
                         {
-                            var tempInside = line[(line.IndexOf("data-preview-url") + "data-preview-url".Length)..];
-                            tempInside = tempInside[(tempInside.IndexOf(Common.Quotation) + 1)..];
-                            if (!tempInside.Contains("/preview"))
+                            if (line.Contains("data-preview-url"))
                             {
-                                continue;
+                                var tempInside = line[(line.IndexOf("data-preview-url") + "data-preview-url".Length)..];
+                                tempInside = tempInside[(tempInside.IndexOf(Common.Quotation) + 1)..];
+                                if (!tempInside.Contains("/preview"))
+                                {
+                                    continue;
+                                }
+                                tempInside = tempInside[..(tempInside.IndexOf("/preview") + 1)];
+                                var url = Common.SmogonBaseUrl + tempInside;
+                                threadsForForums[kv.Value].Add(url);
                             }
-                            tempInside = tempInside[..(tempInside.IndexOf("/preview") + 1)];
-                            var url = Common.SmogonBaseUrl + tempInside;
-                            threadsForForums[kv.Value].Add(url);
                         }
                     }
                 }

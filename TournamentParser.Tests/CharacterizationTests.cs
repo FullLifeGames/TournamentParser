@@ -304,6 +304,88 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void ScanThreads_WritesLastPostMetaEntry()
+        {
+            // A small companion entry with just the last post date lets future runs decide
+            // whether a thread is stale without loading the full page-content entry.
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
+            Common.HttpClient = new HttpClient(fake);
+            var cache = new InMemoryDistributedCache();
+
+            new SmogonThreadScanner(cache).ScanThreads(new Dictionary<string, List<string>>
+            {
+                { "forum", new List<string> { SyntheticThreadUrl } },
+            }).Wait();
+
+            var metaKey = SyntheticThreadUrl + SmogonThreadScanner.LastPostCacheKeySuffix;
+            Assert.That(cache.Store.ContainsKey(metaKey), Is.True);
+            var lastPost = DateTime.Parse(
+                Encoding.UTF8.GetString(cache.Store[metaKey]),
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind);
+            Assert.That(lastPost, Is.EqualTo(new DateTime(2021, 3, 23, 17, 30, 0)));
+        }
+
+        [Test]
+        public void ScanThreads_WithRecentCacheEntry_RescansViaHttp()
+        {
+            // A cached thread whose last post is recent must be re-scanned.
+            var cache = new InMemoryDistributedCache();
+            var recentResult = new TopicAnalyzeResult
+            {
+                CollectedLinks = new List<string> { "stale content" },
+                NumberOfPages = 1,
+                LastPost = DateTime.Now.AddDays(-1),
+            };
+            cache.Store[SyntheticThreadUrl] = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(recentResult));
+
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
+            Common.HttpClient = new HttpClient(fake);
+
+            var scanner = new SmogonThreadScanner(cache);
+            scanner.ScanThreads(new Dictionary<string, List<string>>
+            {
+                { "forum", new List<string> { SyntheticThreadUrl } },
+            }).Wait();
+
+            Assert.That(fake.Requests, Does.Contain(SyntheticThreadUrl + "page-1"));
+            Assert.That(scanner.NameUserTranslation.Keys,
+                Is.EquivalentTo(new[] { "alice", "bob", "carol", "tourhost" }));
+        }
+
+        [Test]
+        public void ScanThreads_WithLegacyCacheEntry_WithoutMetaKey_StillUsesCache()
+        {
+            // Cache entries written before the meta key existed must keep working.
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
+            Common.HttpClient = new HttpClient(fake);
+            var seedCache = new InMemoryDistributedCache();
+            new SmogonThreadScanner(seedCache).ScanThreads(new Dictionary<string, List<string>>
+            {
+                { "forum", new List<string> { SyntheticThreadUrl } },
+            }).Wait();
+
+            // Copy only the legacy full entry into a fresh cache (no meta key).
+            var legacyCache = new InMemoryDistributedCache();
+            legacyCache.Store[SyntheticThreadUrl] = seedCache.Store[SyntheticThreadUrl];
+
+            var offlineFake = new FakeHttpMessageHandler();
+            Common.HttpClient = new HttpClient(offlineFake);
+            var scanner = new SmogonThreadScanner(legacyCache);
+            scanner.ScanThreads(new Dictionary<string, List<string>>
+            {
+                { "forum", new List<string> { SyntheticThreadUrl } },
+            }).Wait();
+
+            Assert.That(offlineFake.Requests, Is.Empty);
+            Assert.That(scanner.NameUserTranslation.Keys,
+                Is.EquivalentTo(new[] { "alice", "bob", "carol", "tourhost" }));
+        }
+
+        [Test]
         public void ScanThreads_WithStaleCacheEntry_UsesCacheAndSkipsHttp()
         {
             // First scan to produce a cache entry (LastPost is 2021 => older than 6 months).
@@ -574,6 +656,15 @@ namespace TournamentParser.Tests
         {
             using var handler = Common.CreateHttpClientHandler();
             Assert.That(handler.AutomaticDecompression, Is.EqualTo(System.Net.DecompressionMethods.All));
+        }
+
+        [Test]
+        public void Common_EnumerateLines_MatchesStringSplitExactly()
+        {
+            foreach (var text in new[] { "", "a", "a\nb", "a\n", "\n", "a\n\nb", "line1\nline2\n" })
+            {
+                Assert.That(Common.EnumerateLines(text), Is.EqualTo(text.Split('\n')), $"input: '{text}'");
+            }
         }
 
         [Test]

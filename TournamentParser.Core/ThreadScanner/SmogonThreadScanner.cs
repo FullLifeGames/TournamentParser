@@ -32,10 +32,14 @@ namespace TournamentParser.ThreadScanner
 
         private const string ShowdownReplayString = "replay.pokemonshowdown.com/";
 
+        /// <summary>
+        /// Companion cache key storing only the thread's last post date, so staleness can be
+        /// decided without loading the full page-content entry.
+        /// </summary>
+        public const string LastPostCacheKeySuffix = "#lastPost";
+
         public async Task ScanThreads(IDictionary<string, List<string>> threadsForForums)
         {
-            var toSet = new ConcurrentDictionary<string, string>();
-
             await Parallel.ForEachAsync(
                 threadsForForums.SelectMany(thread => thread.Value),
                 Common.ParallelOptions,
@@ -51,9 +55,15 @@ namespace TournamentParser.ThreadScanner
                     else
                     {
                         var analyzeResult = await AnalyzeTopic(url, ct).ConfigureAwait(false);
-                        if (analyzeResult is not null)
+                        if (analyzeResult is not null && _cache is not null)
                         {
-                            toSet.TryAdd(url, JsonConvert.SerializeObject(analyzeResult));
+                            // Write immediately so the collected page content of each thread can
+                            // be garbage collected instead of accumulating for the whole scan.
+                            await _cache.SetStringAsync(url, JsonConvert.SerializeObject(analyzeResult), ct).ConfigureAwait(false);
+                            await _cache.SetStringAsync(
+                                url + LastPostCacheKeySuffix,
+                                analyzeResult.LastPost.ToString("O", CultureInfo.InvariantCulture),
+                                ct).ConfigureAwait(false);
                         }
                     }
                     var nowUsers = Users.Count;
@@ -61,13 +71,6 @@ namespace TournamentParser.ThreadScanner
                     Console.WriteLine();
                 }
             ).ConfigureAwait(false);
-
-            Console.WriteLine("Writing to cache");
-            foreach (var settingValue in toSet)
-            {
-                _cache?.SetString(settingValue.Key, settingValue.Value);
-            }
-            Console.WriteLine("Wrote to cache");
         }
 
         /// <summary>
@@ -81,14 +84,19 @@ namespace TournamentParser.ThreadScanner
                 return null;
             }
 
-            string? cachedResults = null;
-            try
+            var sixMonthsAgo = DateTime.Now.AddMonths(-6);
+
+            // Threads with recent activity get re-scanned; the lightweight meta entry lets us
+            // skip loading their full page-content entry entirely.
+            var metaString = await GetCachedStringSafe(fullUrl + LastPostCacheKeySuffix, ct).ConfigureAwait(false);
+            if (metaString is not null
+                && DateTime.TryParseExact(metaString, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var lastPost)
+                && lastPost >= sixMonthsAgo)
             {
-                cachedResults = await _cache.GetStringAsync(fullUrl, ct).ConfigureAwait(false);
+                return null;
             }
-            catch (NullReferenceException)
-            {
-            }
+
+            var cachedResults = await GetCachedStringSafe(fullUrl, ct).ConfigureAwait(false);
             if (cachedResults == null)
             {
                 return null;
@@ -101,7 +109,19 @@ namespace TournamentParser.ThreadScanner
             }
 
             // If the last post is older than six months, assumption is that no new activity with relevant matches will be posted
-            return analyzeResult.LastPost < DateTime.Now.AddMonths(-6) ? analyzeResult : null;
+            return analyzeResult.LastPost < sixMonthsAgo ? analyzeResult : null;
+        }
+
+        private async Task<string?> GetCachedStringSafe(string key, System.Threading.CancellationToken ct)
+        {
+            try
+            {
+                return await _cache!.GetStringAsync(key, ct).ConfigureAwait(false);
+            }
+            catch (NullReferenceException)
+            {
+                return null;
+            }
         }
 
         private static int GetNumberOfPages(string site)
@@ -139,40 +159,51 @@ namespace TournamentParser.ThreadScanner
                 }
                 thread.Id = id;
 
-                var firstPage = await Common.HttpClient.GetStringAsync(url + "page-1", ct).ConfigureAwait(false);
-                pages = GetNumberOfPages(firstPage);
-                var sites = new string[pages];
-                sites[0] = firstPage;
-                if (pages > 1)
+                void ProcessPage(int pageCount, string site)
                 {
-                    // Fetching is network-bound and page-independent, so it runs concurrently;
-                    // processing below stays sequential because parsing carries state across pages.
-                    var parallelOptions = new ParallelOptions
-                    {
-                        MaxDegreeOfParallelism = Common.ParallelOptions.MaxDegreeOfParallelism,
-                        CancellationToken = ct,
-                    };
-                    await Parallel.ForEachAsync(Enumerable.Range(2, pages - 1), parallelOptions, async (pageCount, innerCt) =>
-                    {
-                        sites[pageCount - 1] = await Common.HttpClient.GetStringAsync(url + "page-" + pageCount, innerCt).ConfigureAwait(false);
-                    }).ConfigureAwait(false);
-                }
-
-                for (var pageCount = 1; pageCount <= pages; pageCount++)
-                {
-                    var site = sites[pageCount - 1];
-
                     var lineDataHandler = new LineDataHandler()
                     {
                         PostNumber = (pageCount - 1) * 25
                     };
 
-                    foreach (var line in site.Split('\n'))
+                    foreach (var line in Common.EnumerateLines(site))
                     {
                         HandleLine(url, line, thread, currentlyUserToMatch, lineDataHandler);
                     }
                     latestPost = lineDataHandler.PostDate;
                     collectedLinks.Add(string.Join('\n', lineDataHandler.FullImportantSiteBits));
+                }
+
+                var firstPage = await Common.HttpClient.GetStringAsync(url + "page-1", ct).ConfigureAwait(false);
+                pages = GetNumberOfPages(firstPage);
+                ProcessPage(1, firstPage);
+                firstPage = null!;
+
+                // Fetching is network-bound and page-independent, so it runs concurrently, but
+                // in bounded batches so only a handful of raw pages are held in memory at once;
+                // processing stays sequential because parsing carries state across pages.
+                var batchSize = Common.ParallelOptions.MaxDegreeOfParallelism > 0
+                    ? Common.ParallelOptions.MaxDegreeOfParallelism
+                    : Environment.ProcessorCount;
+                var parallelOptions = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = Common.ParallelOptions.MaxDegreeOfParallelism,
+                    CancellationToken = ct,
+                };
+                for (var batchStart = 2; batchStart <= pages; batchStart += batchSize)
+                {
+                    var batchCount = Math.Min(batchSize, pages - batchStart + 1);
+                    var sites = new string[batchCount];
+                    await Parallel.ForEachAsync(Enumerable.Range(batchStart, batchCount), parallelOptions, async (pageCount, innerCt) =>
+                    {
+                        sites[pageCount - batchStart] = await Common.HttpClient.GetStringAsync(url + "page-" + pageCount, innerCt).ConfigureAwait(false);
+                    }).ConfigureAwait(false);
+
+                    for (var pageCount = batchStart; pageCount < batchStart + batchCount; pageCount++)
+                    {
+                        ProcessPage(pageCount, sites[pageCount - batchStart]);
+                        sites[pageCount - batchStart] = null!;
+                    }
                 }
             }
             catch (Exception e)
@@ -211,7 +242,7 @@ namespace TournamentParser.ThreadScanner
                         PostNumber = pageCount * 25
                     };
 
-                    foreach (var line in site.Split('\n'))
+                    foreach (var line in Common.EnumerateLines(site))
                     {
                         HandleLine(url, line, thread, currentlyUserToMatch, lineDataHandler);
                     }
