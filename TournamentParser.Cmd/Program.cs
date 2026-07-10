@@ -30,3 +30,15 @@ using (var file = File.CreateText("output.json"))
     var serializer = new JsonSerializer();
     serializer.Serialize(file, nameUserTranslation);
 }
+
+// serialize JSON directly to a file
+var users = Directory.CreateDirectory("users");
+foreach (var user in nameUserTranslation)
+{
+    using (var file = File.CreateText($"users/{user}.json"))
+    {
+        var serializer = new JsonSerializer();
+        serializer.Serialize(file, nameUserTranslation);
+    }
+}
+

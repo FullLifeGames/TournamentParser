@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using TournamentParser.Data;
@@ -12,25 +13,41 @@ namespace TournamentParser.Finalizer
 
         public void Finalize(IDictionary<string, User> nameUserTranslation)
         {
+            // Thread names repeat across many users and matches; normalize each distinct name once.
+            var normalizedThreadNames = new Dictionary<string, string>();
+            string NormalizeThreadName(TournamentMatch match)
+            {
+                var rawName = match.Thread?.Name ?? "";
+                if (!normalizedThreadNames.TryGetValue(rawName, out var normalized))
+                {
+                    normalized = _regexUtil.RegexWithABC(rawName);
+                    normalizedThreadNames.Add(rawName, normalized);
+                }
+                return normalized;
+            }
+
             foreach (var user in nameUserTranslation.Values)
             {
-                user.Matches = new ConcurrentBag<TournamentMatch>(user.Matches.Where((match) => !match.Irrelevant));
-                foreach (var match in user.Matches)
+                var keptMatches = user.Matches.Where((match) => !match.Irrelevant).ToArray();
+                user.Matches = new ConcurrentBag<TournamentMatch>(keptMatches);
+
+                // A match without a recorded winner is won by this user if the user has a
+                // later match in the same (normalized) thread: they must have advanced.
+                var latestPostDates = new Dictionary<string, DateTime>();
+                foreach (var match in keptMatches)
                 {
-                    if (match.Winner == null)
+                    var threadName = NormalizeThreadName(match);
+                    if (!latestPostDates.TryGetValue(threadName, out var latest) || latest < match.PostDate)
                     {
-                        var threadName = _regexUtil.RegexWithABC(match.Thread?.Name);
-                        foreach (var matchCompare in user.Matches)
-                        {
-                            if (match != matchCompare && threadName == _regexUtil.RegexWithABC(matchCompare.Thread?.Name))
-                            {
-                                if (match.PostDate < matchCompare.PostDate)
-                                {
-                                    match.Winner = user.Name;
-                                    match.Finished = true;
-                                }
-                            }
-                        }
+                        latestPostDates[threadName] = match.PostDate;
+                    }
+                }
+                foreach (var match in keptMatches)
+                {
+                    if (match.Winner == null && match.PostDate < latestPostDates[NormalizeThreadName(match)])
+                    {
+                        match.Winner = user.Name;
+                        match.Finished = true;
                     }
                 }
             }

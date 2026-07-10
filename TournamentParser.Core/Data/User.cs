@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using System.Collections.Concurrent;
+using System.Text;
 
 namespace TournamentParser.Data
 {
@@ -18,14 +19,14 @@ namespace TournamentParser.Data
 
         public override string ToString()
         {
-            var output = $"The user '{Name ?? ""}' with the id {Id} has the following matches:\r\n";
+            var output = new StringBuilder($"The user '{Name ?? ""}' with the id {Id} has the following matches:\r\n");
 
             foreach(var match in Matches)
             {
-                output += match + "\r\n";
+                output.Append(match).Append("\r\n");
             }
 
-            return output;
+            return output.ToString();
         }
     }
 }

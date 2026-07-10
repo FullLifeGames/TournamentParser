@@ -2,31 +2,34 @@
 
 namespace TournamentParser.Util
 {
-    public class RegexUtil
+    public partial class RegexUtil
     {
-        private readonly Regex rgx = new("[, ]");
+        [GeneratedRegex("[, ]")]
+        private static partial Regex CommaSpaceRegex();
         public string Regex(string? toFilter)
         {
             if (toFilter == null)
             {
                 return "";
             }
-            toFilter = rgx.Replace(toFilter, "");
+            toFilter = CommaSpaceRegex().Replace(toFilter, "");
             return toFilter.ToLower();
         }
 
-        private readonly Regex rgxWithSpace = new("[,]");
+        [GeneratedRegex("[,]")]
+        private static partial Regex CommaRegex();
         public string RegexWithSpace(string? toFilter)
         {
             if (toFilter == null)
             {
                 return "";
             }
-            toFilter = rgxWithSpace.Replace(toFilter, "");
+            toFilter = CommaRegex().Replace(toFilter, "");
             return toFilter.ToLower();
         }
 
-        private readonly Regex rgxWithAbc = new("[^a-zA-Z0-9]");
+        [GeneratedRegex("[^a-zA-Z0-9]")]
+        private static partial Regex NonAlphanumericRegex();
         public string RegexWithABC(string? toFilter)
         {
             if (toFilter == null)
@@ -37,35 +40,44 @@ namespace TournamentParser.Util
             {
                 toFilter = toFilter[..toFilter.LastIndexOf(" ")];
             }
-            toFilter = rgxWithAbc.Replace(toFilter, "");
+            toFilter = NonAlphanumericRegex().Replace(toFilter, "");
             return toFilter.ToLower();
         }
 
-        private readonly Regex htmlRegex = new("<.*?>");
-        private readonly Regex eckigRegex = new("\\[.*?\\]");
-        private readonly Regex rundRegex = new("\\(.*?\\)");
-        private readonly Regex weirdSpace = new(" ");
+        [GeneratedRegex("<.*?>")]
+        private static partial Regex HtmlRegex();
+        [GeneratedRegex("\\[.*?\\]")]
+        private static partial Regex EckigRegex();
+        [GeneratedRegex("\\(.*?\\)")]
+        private static partial Regex RundRegex();
+        [GeneratedRegex("\u202F")] // narrow no-break space
+        private static partial Regex WeirdSpaceRegex();
         public string StripHTML(string inputString)
         {
-            return weirdSpace.Replace(rundRegex.Replace(eckigRegex.Replace(htmlRegex.Replace(inputString, ""), ""), ""), "").Trim();
+            // The four replacements must stay sequential in this order: e.g. "[a<b]c>"
+            // yields "[a" here but "c>" with a combined single-pass alternation.
+            return WeirdSpaceRegex().Replace(RundRegex().Replace(EckigRegex().Replace(HtmlRegex().Replace(inputString, ""), ""), ""), "").Trim();
         }
 
-        private readonly Regex positionRegex = new("([0-9]+\\.) ");
+        [GeneratedRegex("([0-9]+\\.) ")]
+        private static partial Regex PositionRegex();
         public string RemovePositions(string userString)
         {
-            return positionRegex.Replace(userString, "");
+            return PositionRegex().Replace(userString, "");
         }
 
-        private readonly Regex numberReplayRegex = new("(- [0-9]( \\| [0-9])*)");
+        [GeneratedRegex("(- [0-9]( \\| [0-9])*)")]
+        private static partial Regex NumberReplayRegex();
         public string RemoveNumberReplays(string userString)
         {
-            return numberReplayRegex.Replace(userString, "").Trim();
+            return NumberReplayRegex().Replace(userString, "").Trim();
         }
 
-        private readonly Regex reactionRegex = new("reactions:\n.*");
+        [GeneratedRegex("reactions:\n.*")]
+        private static partial Regex ReactionRegex();
         public string RemoveReactions(string lineString)
         {
-            return reactionRegex.Replace(lineString, "").Trim();
+            return ReactionRegex().Replace(lineString, "").Trim();
         }
     }
 }

@@ -17,4 +17,8 @@
     <ProjectReference Include="..\TournamentParser.Core\TournamentParser.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

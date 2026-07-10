@@ -13,7 +13,7 @@ namespace TournamentParser.ThreadCollector
             string filter, IDictionary<string, string>? additionals = null)
         {
             var tournamentToLinks = new Dictionary<string, string>();
-            var smogonMain = await Common.HttpClient.GetStringAsync("http://www.smogon.com/forums/").ConfigureAwait(false);
+            var smogonMain = await Common.HttpClient.GetStringAsync(Common.SmogonBaseUrl + "/forums/").ConfigureAwait(false);
             var scanStartOne = false;
 
             var lines = smogonMain.Split('\n');
@@ -33,7 +33,7 @@ namespace TournamentParser.ThreadCollector
 
                         var tourUrl = line[(line.IndexOf(Common.Quotation) + 1)..];
                         tourUrl = tourUrl[..tourUrl.IndexOf(Common.Quotation)];
-                        tourUrl = "http://www.smogon.com" + tourUrl;
+                        tourUrl = Common.SmogonBaseUrl + tourUrl;
 
                         if (!tournamentToLinks.ContainsKey(tourName))
                         {
@@ -83,9 +83,23 @@ namespace TournamentParser.ThreadCollector
 
                 Console.WriteLine("Looking for scannable tournament threads in: " + kv.Value);
                 var beforeCount = threadsForForums[kv.Value].Count;
+
+                // Fetch listing pages concurrently, then process them in page order so the
+                // collected thread URLs keep their original ordering.
+                var listingPages = new string[pages];
+                var parallelOptions = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = Common.ParallelOptions.MaxDegreeOfParallelism,
+                    CancellationToken = ct,
+                };
+                await Parallel.ForEachAsync(Enumerable.Range(1, pages), parallelOptions, async (pageCount, innerCt) =>
+                {
+                    listingPages[pageCount - 1] = await Common.HttpClient.GetStringAsync(kv.Value + "page-" + pageCount, innerCt).ConfigureAwait(false);
+                }).ConfigureAwait(false);
+
                 for (var pageCount = 1; pageCount <= pages; pageCount++)
                 {
-                    site = await Common.HttpClient.GetStringAsync(kv.Value + "page-" + pageCount, ct).ConfigureAwait(false);
+                    site = listingPages[pageCount - 1];
 
                     foreach (var line in site.Split('\n'))
                     {
@@ -98,7 +112,7 @@ namespace TournamentParser.ThreadCollector
                                 continue;
                             }
                             tempInside = tempInside[..(tempInside.IndexOf("/preview") + 1)];
-                            var url = "http://www.smogon.com" + tempInside;
+                            var url = Common.SmogonBaseUrl + tempInside;
                             threadsForForums[kv.Value].Add(url);
                         }
                     }

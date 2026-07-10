@@ -34,7 +34,7 @@ namespace TournamentParser.ThreadScanner
 
         public async Task ScanThreads(IDictionary<string, List<string>> threadsForForums)
         {
-            var toSet = new Dictionary<string, string>();
+            var toSet = new ConcurrentDictionary<string, string>();
 
             await Parallel.ForEachAsync(
                 threadsForForums.SelectMany(thread => thread.Value),
@@ -43,18 +43,17 @@ namespace TournamentParser.ThreadScanner
                 {
                     Console.WriteLine("Currently Scanning: " + url);
                     var previousUsers = Users.Count;
-                    TopicAnalyzeResult? analyzeResult;
-                    if (await LastIdIsCurrent(url))
+                    var cachedResult = await GetReusableCachedResult(url, ct).ConfigureAwait(false);
+                    if (cachedResult is not null)
                     {
-                        analyzeResult = JsonConvert.DeserializeObject<TopicAnalyzeResult>(_cache!.GetString(url)!)!;
-                        await AnalyzeTopic(url, analyzeResult.CollectedLinks, ct).ConfigureAwait(false);
+                        await AnalyzeTopic(url, cachedResult.CollectedLinks, ct).ConfigureAwait(false);
                     }
                     else
                     {
-                        analyzeResult = await AnalyzeTopic(url, ct).ConfigureAwait(false);
-                        if (analyzeResult is not null && !toSet.ContainsKey(url))
+                        var analyzeResult = await AnalyzeTopic(url, ct).ConfigureAwait(false);
+                        if (analyzeResult is not null)
                         {
-                            toSet.Add(url, JsonConvert.SerializeObject(analyzeResult));
+                            toSet.TryAdd(url, JsonConvert.SerializeObject(analyzeResult));
                         }
                     }
                     var nowUsers = Users.Count;
@@ -66,45 +65,43 @@ namespace TournamentParser.ThreadScanner
             Console.WriteLine("Writing to cache");
             foreach (var settingValue in toSet)
             {
-                if (settingValue.Key is not null)
-                {
-                    _cache?.SetString(settingValue.Key, settingValue.Value);
-                }
+                _cache?.SetString(settingValue.Key, settingValue.Value);
             }
             Console.WriteLine("Wrote to cache");
         }
 
-        private async Task<bool> LastIdIsCurrent(string fullUrl)
+        /// <summary>
+        /// Returns the cached analyze result when it is still usable (last post older than six
+        /// months, so no new relevant matches are expected), otherwise null.
+        /// </summary>
+        private async Task<TopicAnalyzeResult?> GetReusableCachedResult(string fullUrl, System.Threading.CancellationToken ct)
         {
-            return await Task.Run(() =>
+            if (_cache == null)
             {
-                if (_cache == null)
-                {
-                    return false;
-                }
+                return null;
+            }
 
-                string? cachedResults = null;
-                try
-                {
-                    cachedResults = _cache.GetString(fullUrl);
-                }
-                catch (NullReferenceException)
-                {
-                }
-                if (cachedResults == null)
-                {
-                    return false;
-                }
+            string? cachedResults = null;
+            try
+            {
+                cachedResults = await _cache.GetStringAsync(fullUrl, ct).ConfigureAwait(false);
+            }
+            catch (NullReferenceException)
+            {
+            }
+            if (cachedResults == null)
+            {
+                return null;
+            }
 
-                var analyzeResult = JsonConvert.DeserializeObject<TopicAnalyzeResult>(cachedResults);
-                if (analyzeResult == null)
-                {
-                    return false;
-                }
+            var analyzeResult = JsonConvert.DeserializeObject<TopicAnalyzeResult>(cachedResults);
+            if (analyzeResult == null)
+            {
+                return null;
+            }
 
-                // If the last post is older than six months, assumption is that no new activity with relevant matches will be posted
-                return analyzeResult.LastPost < DateTime.Now.AddMonths(-6);
-            });
+            // If the last post is older than six months, assumption is that no new activity with relevant matches will be posted
+            return analyzeResult.LastPost < DateTime.Now.AddMonths(-6) ? analyzeResult : null;
         }
 
         private static int GetNumberOfPages(string site)
@@ -141,13 +138,29 @@ namespace TournamentParser.ThreadScanner
                     id = id[..id.IndexOf("/")];
                 }
                 thread.Id = id;
+
+                var firstPage = await Common.HttpClient.GetStringAsync(url + "page-1", ct).ConfigureAwait(false);
+                pages = GetNumberOfPages(firstPage);
+                var sites = new string[pages];
+                sites[0] = firstPage;
+                if (pages > 1)
+                {
+                    // Fetching is network-bound and page-independent, so it runs concurrently;
+                    // processing below stays sequential because parsing carries state across pages.
+                    var parallelOptions = new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = Common.ParallelOptions.MaxDegreeOfParallelism,
+                        CancellationToken = ct,
+                    };
+                    await Parallel.ForEachAsync(Enumerable.Range(2, pages - 1), parallelOptions, async (pageCount, innerCt) =>
+                    {
+                        sites[pageCount - 1] = await Common.HttpClient.GetStringAsync(url + "page-" + pageCount, innerCt).ConfigureAwait(false);
+                    }).ConfigureAwait(false);
+                }
+
                 for (var pageCount = 1; pageCount <= pages; pageCount++)
                 {
-                    var site = await Common.HttpClient.GetStringAsync(url + "page-" + pageCount, ct).ConfigureAwait(false);
-                    if (pages == 1)
-                    {
-                        pages = GetNumberOfPages(site);
-                    }
+                    var site = sites[pageCount - 1];
 
                     var lineDataHandler = new LineDataHandler()
                     {
@@ -273,26 +286,28 @@ namespace TournamentParser.ThreadScanner
                 lineDataHandler.PostedBy = lineDataHandler.PostedBy[(lineDataHandler.PostedBy.IndexOf(Common.Quotation) + 1)..];
                 lineDataHandler.PostedBy = lineDataHandler.PostedBy[..lineDataHandler.PostedBy.IndexOf(Common.Quotation)];
             }
-            else if (
-                (_regexUtil.StripHTML(line).Contains(GetMatchFilterString(line)))
-                && IsReplayCollectionPost(url, lineDataHandler)
-            )
-            {
-                var newMatch = DetermineMatch(line, thread, currentlyUserToMatch, lineDataHandler);
-                if (newMatch.FirstUser is not null || newMatch.SecondUser is not null)
-                {
-                    lineDataHandler.LastMatch = newMatch;
-                }
-            }
-            else if (lineDataHandler.LastMatch != null && IsReplayCollectionPost(url, lineDataHandler) && line.Contains(ShowdownReplayString))
-            {
-                AddReplays(line, lineDataHandler.LastMatch);
-            }
             else
             {
-                keepLine = false;
-                // Reset if replay does not come directly afterwards
-                lineDataHandler.LastMatch = null;
+                var strippedLine = _regexUtil.StripHTML(line);
+                if (strippedLine.Contains(GetMatchFilterString(strippedLine))
+                    && IsReplayCollectionPost(url, lineDataHandler))
+                {
+                    var newMatch = DetermineMatch(line, strippedLine, thread, currentlyUserToMatch, lineDataHandler);
+                    if (newMatch.FirstUser is not null || newMatch.SecondUser is not null)
+                    {
+                        lineDataHandler.LastMatch = newMatch;
+                    }
+                }
+                else if (lineDataHandler.LastMatch != null && IsReplayCollectionPost(url, lineDataHandler) && line.Contains(ShowdownReplayString))
+                {
+                    AddReplays(line, lineDataHandler.LastMatch);
+                }
+                else
+                {
+                    keepLine = false;
+                    // Reset if replay does not come directly afterwards
+                    lineDataHandler.LastMatch = null;
+                }
             }
 
             if (lineDataHandler.TakePost && !line.Contains("/likes\""))
@@ -312,7 +327,7 @@ namespace TournamentParser.ThreadScanner
             return lineDataHandler.PostNumber == 1 || lineDataHandler.PostNumber == 2 || url.Contains("-replay");
         }
 
-        private TournamentMatch DetermineMatch(string line, Thread thread, Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, LineDataHandler lineDataHandler)
+        private TournamentMatch DetermineMatch(string line, string strippedLine, Thread thread, Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, LineDataHandler lineDataHandler)
         {
             var match = new TournamentMatch();
 
@@ -321,9 +336,9 @@ namespace TournamentParser.ThreadScanner
                 match.Finished = true;
             }
 
-            var toFilterFor = GetMatchFilterString(line);
+            var toFilterFor = GetMatchFilterString(strippedLine);
 
-            var preparedLine = FilterOutTierDefinitionAndStrip(_regexUtil.StripHTML(line));
+            var preparedLine = FilterOutTierDefinitionAndStrip(strippedLine);
 
             if (preparedLine != toFilterFor && preparedLine.Contains(" " + toFilterFor + " "))
             {
@@ -346,8 +361,10 @@ namespace TournamentParser.ThreadScanner
 
         private void SetupUsers(Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, TournamentMatch match, string toFilterFor, string preparedLine)
         {
-            var userOne = preparedLine[..preparedLine.IndexOf(" " + toFilterFor + " ")];
-            var userTwo = preparedLine[(preparedLine.IndexOf(" " + toFilterFor + " ") + (" " + toFilterFor + " ").Length)..];
+            var separator = " " + toFilterFor + " ";
+            var separatorIndex = preparedLine.IndexOf(separator);
+            var userOne = preparedLine[..separatorIndex];
+            var userTwo = preparedLine[(separatorIndex + separator.Length)..];
 
             userOne = _regexUtil.RemovePositions(userOne);
             userTwo = _regexUtil.RemovePositions(userTwo);
@@ -387,9 +404,9 @@ namespace TournamentParser.ThreadScanner
                 UserWithSpaceTranslation.TryAdd(regexUserOne, _regexUtil.RegexWithSpace(userOne));
             }
             firstUser.Matches.Add(match);
-            if (currentlyUserToMatch.ContainsKey(regexUserOne))
+            if (currentlyUserToMatch.TryGetValue(regexUserOne, out var userOneMatches))
             {
-                currentlyUserToMatch[regexUserOne].Add(match);
+                userOneMatches.Add(match);
             }
             else
             {
@@ -425,9 +442,9 @@ namespace TournamentParser.ThreadScanner
                 UserWithSpaceTranslation.TryAdd(regexUserTwo, _regexUtil.RegexWithSpace(userTwo));
             }
             secondUser.Matches.Add(match);
-            if (currentlyUserToMatch.ContainsKey(regexUserTwo))
+            if (currentlyUserToMatch.TryGetValue(regexUserTwo, out var userTwoMatches))
             {
-                currentlyUserToMatch[regexUserTwo].Add(match);
+                userTwoMatches.Add(match);
             }
             else
             {
@@ -450,9 +467,8 @@ namespace TournamentParser.ThreadScanner
                     winnerName = winnerName[..winnerName.IndexOf("</b>")];
                 }
                 winnerName = _regexUtil.StripHTML(winnerName);
-                if (NameUserTranslation.ContainsKey(_regexUtil.Regex(winnerName)))
+                if (NameUserTranslation.TryGetValue(_regexUtil.Regex(winnerName), out User? winner))
                 {
-                    var winner = NameUserTranslation[_regexUtil.Regex(winnerName)];
                     match.Winner = winner.Name;
                 }
             }
@@ -499,21 +515,21 @@ namespace TournamentParser.ThreadScanner
             }
         }
 
-        private string GetMatchFilterString(string line)
+        private static string GetMatchFilterString(string strippedLine)
         {
             var toFilterFor = "vs";
 
-            if (_regexUtil.StripHTML(line).Contains(" vs. "))
+            if (strippedLine.Contains(" vs. "))
             {
                 toFilterFor = "vs.";
             }
 
-            if (_regexUtil.StripHTML(line).Contains(" VS "))
+            if (strippedLine.Contains(" VS "))
             {
                 toFilterFor = "VS";
             }
 
-            if (_regexUtil.StripHTML(line).Contains(" VS. "))
+            if (strippedLine.Contains(" VS. "))
             {
                 toFilterFor = "VS.";
             }
@@ -527,7 +543,7 @@ namespace TournamentParser.ThreadScanner
             {
                 User? currentUser = null;
                 var postedByRegex = _regexUtil.Regex(lineDataHandler.PostedBy);
-                if (!IdUserTranslation.ContainsKey(lineDataHandler.DataUserId))
+                if (!IdUserTranslation.TryGetValue(lineDataHandler.DataUserId, out User? userForId))
                 {
                     if (!NameUserTranslation.ContainsKey(postedByRegex))
                     {
@@ -578,7 +594,7 @@ namespace TournamentParser.ThreadScanner
                 {
                     if (!NameUserTranslation.ContainsKey(postedByRegex))
                     {
-                        var existingUser = IdUserTranslation[lineDataHandler.DataUserId];
+                        var existingUser = userForId;
 
                         if (existingUser.Name is null)
                         {
@@ -610,8 +626,8 @@ namespace TournamentParser.ThreadScanner
                     NameUserTranslation.TryGetValue(postedByRegex, out currentUser);
                 }
                 var fullPostString = lineDataHandler.FullPost.ToString();
-                var regexFullPost = _regexUtil.Regex(_regexUtil.StripHTML(fullPostString));
-                var regexWithSpaceFullPost = _regexUtil.RegexWithSpace(_regexUtil.StripHTML(fullPostString))
+                var strippedFullPost = _regexUtil.StripHTML(fullPostString);
+                var regexWithSpaceFullPost = _regexUtil.RegexWithSpace(strippedFullPost)
                     .Replace(_regexUtil.RegexWithSpace(currentUser!.NormalName), "")
                     .Replace(_regexUtil.Regex(currentUser.NormalName), "");
                 regexWithSpaceFullPost = _regexUtil.RemoveReactions(regexWithSpaceFullPost);
@@ -619,21 +635,22 @@ namespace TournamentParser.ThreadScanner
                 {
                     var notExistingMatch = true;
                     var match = new TournamentMatch();
-                    if (currentlyUserToMatch.ContainsKey(postedByRegex))
+                    if (currentlyUserToMatch.TryGetValue(postedByRegex, out var userMatches))
                     {
-                        foreach (var currentMatch in currentlyUserToMatch[postedByRegex])
+                        var postTokens = GetInnerTokens(regexWithSpaceFullPost);
+                        foreach (var currentMatch in userMatches)
                         {
-                            if (IsUserPartOfPost(currentMatch.FirstUser, currentUser, regexWithSpaceFullPost)
-                                || IsUserPartOfPost(currentMatch.SecondUser, currentUser, regexWithSpaceFullPost))
+                            if (IsUserPartOfPost(currentMatch.FirstUser, currentUser, postTokens, regexWithSpaceFullPost)
+                                || IsUserPartOfPost(currentMatch.SecondUser, currentUser, postTokens, regexWithSpaceFullPost))
                             {
                                 match = currentMatch;
                                 notExistingMatch = false;
                                 break;
                             }
                         }
-                        if (notExistingMatch && currentlyUserToMatch[postedByRegex].Count == 1)
+                        if (notExistingMatch && userMatches.Count == 1)
                         {
-                            match = currentlyUserToMatch[postedByRegex][0];
+                            match = userMatches[0];
                             notExistingMatch = false;
                         }
                         if (notExistingMatch)
@@ -648,15 +665,25 @@ namespace TournamentParser.ThreadScanner
                             // Order by name length of the users so that short common terms are ignored longer and bigger names can be respected
                             var closest = int.MaxValue;
                             User? closestUser = null;
-                            foreach (var user in Users.OrderByDescending(u => u.Name?.Length))
+                            if (match.FirstUser is not null
+                                && NameUserTranslation.TryGetValue(match.FirstUser, out User? postingUser)
+                                && postingUser.Name is not null)
                             {
-                                if (IsUserPartOfPost(match.FirstUser, user, regexWithSpaceFullPost))
+                                foreach (var user in Users.OrderByDescending(u => u.Name?.Length))
                                 {
-                                    var closeIndex = regexWithSpaceFullPost.IndexOf(user?.Name ?? "notdefined");
-                                    if (closest > closeIndex)
+                                    if (user != postingUser && UserMentionedInPost(user, postTokens, regexWithSpaceFullPost))
                                     {
-                                        closest = closeIndex;
-                                        closestUser = user;
+                                        var closeIndex = regexWithSpaceFullPost.IndexOf(user?.Name ?? "notdefined");
+                                        if (closest > closeIndex)
+                                        {
+                                            closest = closeIndex;
+                                            closestUser = user;
+                                        }
+                                        if (closest == -1)
+                                        {
+                                            // IndexOf can never return less than -1, so the result is settled.
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -709,20 +736,43 @@ namespace TournamentParser.ThreadScanner
             }
         }
 
-        private bool IsUserPartOfPost(string? userString, User compareUser, string regexWithSpaceFullPost)
+        /// <summary>
+        /// All tokens of <paramref name="text"/> that are enclosed by spaces on both sides,
+        /// so that <c>set.Contains(x)</c> is equivalent to <c>text.Contains(" " + x + " ")</c>
+        /// for any space-free <paramref name="text"/> token x.
+        /// </summary>
+        private static HashSet<string> GetInnerTokens(string text)
+        {
+            var tokens = text.Split(' ');
+            var innerTokens = new HashSet<string>();
+            for (var i = 1; i < tokens.Length - 1; i++)
+            {
+                innerTokens.Add(tokens[i]);
+            }
+            return innerTokens;
+        }
+
+        private bool UserMentionedInPost(User compareUser, HashSet<string> postTokens, string regexWithSpaceFullPost)
+        {
+            // User.Name never contains spaces (RegexUtil.Regex strips them), so the
+            // " name " containment check reduces to an inner-token lookup.
+            var regexBool = postTokens.Contains(compareUser.Name ?? "");
+            if (!regexBool && compareUser.Name is not null
+                && UserWithSpaceTranslation.TryGetValue(compareUser.Name, out string? userName)
+                && userName != compareUser.Name)
+            {
+                regexBool = regexWithSpaceFullPost.Contains(" " + userName + " ");
+            }
+            return regexBool;
+        }
+
+        private bool IsUserPartOfPost(string? userString, User compareUser, HashSet<string> postTokens, string regexWithSpaceFullPost)
         {
             if (userString is not null && NameUserTranslation.TryGetValue(userString, out User? parsedUser))
             {
                 if (parsedUser.Name is not null)
                 {
-                    var returnBool = true;
-                    returnBool = returnBool && parsedUser != compareUser;
-                    var regexBool = regexWithSpaceFullPost.Contains(" " + compareUser.Name + " ");
-                    if (compareUser.Name is not null && UserWithSpaceTranslation.TryGetValue(compareUser.Name, out string? userName))
-                    {
-                        regexBool = regexBool || regexWithSpaceFullPost.Contains(" " + userName + " ");
-                    }
-                    return returnBool && regexBool;
+                    return parsedUser != compareUser && UserMentionedInPost(compareUser, postTokens, regexWithSpaceFullPost);
                 }
             }
             return false;
