@@ -44,7 +44,9 @@ namespace TournamentParser.Util
             return toFilter.ToLower();
         }
 
-        [GeneratedRegex("<.*?>")]
+        // Quote-aware: a ">" inside a quoted attribute value (XenForo emits e.g.
+        // data-username="<b>name</b>") must not terminate the tag early.
+        [GeneratedRegex("<(?:[^>\"']|\"[^\"]*\"|'[^']*')*>")]
         private static partial Regex HtmlRegex();
         [GeneratedRegex("\\[.*?\\]")]
         private static partial Regex EckigRegex();

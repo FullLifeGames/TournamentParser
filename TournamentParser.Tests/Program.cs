@@ -188,8 +188,7 @@ namespace TournamentParser.Tests
 
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             Assert.That(playingUsers.Count() > 100);
-            // TODO: FIX
-            //Assert.That(playingUsers.Count((user) => user.Matches.Any((match) => match.Replays.Count > 0)) > 100);
+            Assert.That(playingUsers.Count((user) => user.Matches.Any((match) => match.Replays.Count > 0)) > 100);
             Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 

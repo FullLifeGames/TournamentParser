@@ -31,14 +31,15 @@ using (var file = File.CreateText("output.json"))
     serializer.Serialize(file, nameUserTranslation);
 }
 
-// serialize JSON directly to a file
-var users = Directory.CreateDirectory("users");
+// serialize each user's data into its own JSON file
+var usersDirectory = Directory.CreateDirectory("users");
 foreach (var user in nameUserTranslation)
 {
-    using (var file = File.CreateText($"users/{user}.json"))
+    var fileName = TournamentParser.Util.Common.SanitizeFileName(user.Key) + ".json";
+    using (var file = File.CreateText(Path.Combine(usersDirectory.FullName, fileName)))
     {
         var serializer = new JsonSerializer();
-        serializer.Serialize(file, nameUserTranslation);
+        serializer.Serialize(file, user.Value);
     }
 }
 

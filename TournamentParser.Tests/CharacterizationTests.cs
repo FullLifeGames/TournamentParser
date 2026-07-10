@@ -1,4 +1,4 @@
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
@@ -86,6 +86,21 @@ namespace TournamentParser.Tests
             // alternation regex would produce "c>" here instead of "[a".
             var util = new RegexUtil();
             Assert.That(util.StripHTML("[a<b]c>"), Is.EqualTo("[a"));
+        }
+
+        [Test]
+        public void StripHTML_HandlesTagsInsideQuotedAttributeValues()
+        {
+            // XenForo user mentions embed the bold winner markup inside the attribute:
+            // data-username="<b>TyCarter</b>". The tag regex must not stop at the ">"
+            // of the embedded <b>, or a stray "> survives and corrupts the line.
+            var util = new RegexUtil();
+            Assert.That(
+                util.StripHTML("<a data-username=\"<b>Ty</b>\"><b>Ty</b></a> won"),
+                Is.EqualTo("Ty won"));
+            Assert.That(
+                util.StripHTML("<a data-username=\"Zerkas\">Zerkas</a>  vs  <a data-username=\"<b>TyCarter</b>\"><b>TyCarter</b></a><br />"),
+                Is.EqualTo("Zerkas  vs  TyCarter"));
         }
 
         [Test]
@@ -470,6 +485,35 @@ namespace TournamentParser.Tests
                 "every real OLT participant has at least one replay");
         }
 
+        [Test]
+        public void UuOpenFixtureScan_ParsesPairingsWithBoldedWinners()
+        {
+            // Pairing lines mark the winner in <b> tags that XenForo also embeds inside
+            // the mention's data-username attribute; those matches must still parse.
+            const string url = "https://www.smogon.com/forums/threads/the-uu-open-xii-round-2-replays-mandatory-no-exceptions.3721437/";
+            var fake = new FakeHttpMessageHandler();
+            for (var page = 1; page <= 5; page++)
+            {
+                fake.Map(url + "page-" + page, Fixture($"uu-open-xii-r2-page-{page}.html"));
+            }
+            Common.HttpClient = new HttpClient(fake);
+
+            var scanner = new SmogonThreadScanner();
+            var result = scanner.AnalyzeTopic(url, CancellationToken.None).Result;
+            Assert.That(result, Is.Not.Null);
+
+            // Zerkas vs TyCarter with TyCarter bolded as the winner.
+            Assert.That(scanner.NameUserTranslation, Does.ContainKey("tycarter"));
+            var tyCarter = scanner.NameUserTranslation["tycarter"];
+            Assert.That(tyCarter.Matches, Is.Not.Empty);
+            var pairing = tyCarter.Matches.Single(m => m.FirstUser == "zerkas" || m.SecondUser == "zerkas");
+            Assert.That(pairing.Winner, Is.EqualTo("tycarter"));
+
+            var playingUsers = scanner.Users.Where(user => !user.Matches.IsEmpty).ToList();
+            Assert.That(playingUsers.Count(u => u.Matches.Any(m => m.Replays.Count > 0)),
+                Is.GreaterThan(100));
+        }
+
         #endregion
 
         #region Collector on synthetic pages
@@ -530,6 +574,16 @@ namespace TournamentParser.Tests
         {
             using var handler = Common.CreateHttpClientHandler();
             Assert.That(handler.AutomaticDecompression, Is.EqualTo(System.Net.DecompressionMethods.All));
+        }
+
+        [Test]
+        public void Common_SanitizeFileName_ReplacesInvalidCharacters()
+        {
+            Assert.That(Common.SanitizeFileName("alice"), Is.EqualTo("alice"));
+            Assert.That(Common.SanitizeFileName("sacri'"), Is.EqualTo("sacri'"));
+            Assert.That(Common.SanitizeFileName("a<b>c:d\"e/f\\g|h?i*j"), Is.EqualTo("a_b_c_d_e_f_g_h_i_j"));
+            Assert.That(Common.SanitizeFileName("tab\tandcontrol"), Is.EqualTo("tab_andcontrol"));
+            Assert.That(Common.SanitizeFileName(""), Is.EqualTo("_"));
         }
 
         #endregion
