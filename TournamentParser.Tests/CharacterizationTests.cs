@@ -562,9 +562,89 @@ namespace TournamentParser.Tests
             var playingUsers = scanner.Users.Where(user => !user.Matches.IsEmpty).ToList();
             Assert.That(playingUsers.Select(u => u.Name), Has.None.Contains("\n"),
                 "JSON-LD text block was parsed as a match line");
-            Assert.That(playingUsers, Has.Count.EqualTo(36));
+            // 35, not 36: "Ojama vs Zuchtrest - 1 | 2 | 3&#8203;" used to spawn a duplicate
+            // "zuchtrest&#8203;" user; since scores after " - " are cut from names, the finals
+            // match belongs to the real "zuchtrest".
+            Assert.That(playingUsers, Has.Count.EqualTo(35));
+            Assert.That(playingUsers.Select(u => u.Name), Does.Contain("zuchtrest"));
+            Assert.That(playingUsers.Select(u => u.Name), Does.Not.Contain("zuchtrest&#8203;"));
             Assert.That(playingUsers, Has.All.Matches<User>(u => u.Matches.Any(m => m.Replays.Count > 0)),
                 "every real OLT participant has at least one replay");
+        }
+
+        [Test]
+        public void RetroCupFixture_PredictionCommentaryDoesNotCreateGarbageUsers()
+        {
+            // Post 1 contains prediction paragraphs like
+            // "Zokuru vs Vani - this is an intetesting one, ..." on a single line; the text
+            // after the dash is commentary, not part of the second user's name.
+            var scanner = new SmogonThreadScanner();
+            scanner.AnalyzeTopic(
+                "https://www.smogon.com/forums/threads/retro-cup-of-pokemon-2025-quarterfinals-tiebreaker-at-46.3772101/",
+                new List<string> { Fixture("retro-cup-2025-qf-tiebreaker-page-1.html") },
+                CancellationToken.None).Wait();
+
+            Assert.That(scanner.NameUserTranslation.Keys.Select(k => k.Length).Max(),
+                Is.LessThanOrEqualTo(50), "no user name may exceed the forum's username limit");
+            Assert.That(scanner.NameUserTranslation, Does.ContainKey("zokuru"));
+            Assert.That(scanner.NameUserTranslation, Does.ContainKey("vani"));
+            Assert.That(scanner.NameUserTranslation["vani"].Matches
+                .Any(m => m.FirstUser == "zokuru" || m.SecondUser == "zokuru"),
+                Is.True, "the pairing itself must still be recognized");
+        }
+
+        [Test]
+        public void SyntheticScan_OverlongVsLineCreatesNoUsers()
+        {
+            const string url = "https://www.smogon.com/forums/threads/cap-test.5555/";
+            var page = SyntheticPages.ThreadPage("Cap Test Tour", new[]
+            {
+                new SyntheticPages.Post
+                {
+                    Author = "Host",
+                    UserId = 700,
+                    DateTitle = "Jan 1, 2021 at 1:00 PM",
+                    BodyLines = new List<string>
+                    {
+                        "Alice vs " + new string('x', 120),
+                    },
+                },
+            });
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(url + "page-1", page);
+            Common.HttpClient = new HttpClient(fake);
+
+            var scanner = new SmogonThreadScanner();
+            scanner.AnalyzeTopic(url, CancellationToken.None).Wait();
+
+            Assert.That(scanner.NameUserTranslation.Keys, Is.EquivalentTo(new[] { "host" }));
+        }
+
+        [Test]
+        public void SyntheticScan_ScoreSuffixAfterDashIsNotPartOfTheName()
+        {
+            const string url = "https://www.smogon.com/forums/threads/score-test.6666/";
+            var page = SyntheticPages.ThreadPage("Score Test Tour", new[]
+            {
+                new SyntheticPages.Post
+                {
+                    Author = "Host",
+                    UserId = 700,
+                    DateTitle = "Jan 1, 2021 at 1:00 PM",
+                    BodyLines = new List<string>
+                    {
+                        "Karl vs. Lena - 2-0",
+                    },
+                },
+            });
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(url + "page-1", page);
+            Common.HttpClient = new HttpClient(fake);
+
+            var scanner = new SmogonThreadScanner();
+            scanner.AnalyzeTopic(url, CancellationToken.None).Wait();
+
+            Assert.That(scanner.NameUserTranslation.Keys, Is.EquivalentTo(new[] { "karl", "lena", "host" }));
         }
 
         [Test]
@@ -675,6 +755,21 @@ namespace TournamentParser.Tests
             Assert.That(Common.SanitizeFileName("a<b>c:d\"e/f\\g|h?i*j"), Is.EqualTo("a_b_c_d_e_f_g_h_i_j"));
             Assert.That(Common.SanitizeFileName("tab\tandcontrol"), Is.EqualTo("tab_andcontrol"));
             Assert.That(Common.SanitizeFileName(""), Is.EqualTo("_"));
+        }
+
+        [Test]
+        public void Common_SanitizeFileName_CapsOverlongNamesDeterministically()
+        {
+            // Garbage or pathological names must never produce a file name exceeding OS limits.
+            var longNameA = new string('a', 300);
+            var longNameB = new string('a', 299) + "b";
+
+            var sanitizedA = Common.SanitizeFileName(longNameA);
+            Assert.That(sanitizedA.Length, Is.LessThanOrEqualTo(100));
+            Assert.That(sanitizedA, Does.StartWith("aaaa"));
+            Assert.That(Common.SanitizeFileName(longNameA), Is.EqualTo(sanitizedA), "must be deterministic");
+            Assert.That(Common.SanitizeFileName(longNameB), Is.Not.EqualTo(sanitizedA),
+                "different names must not collide after truncation");
         }
 
         #endregion

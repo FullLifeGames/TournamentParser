@@ -54,9 +54,13 @@ namespace TournamentParser.Util
 
         private const string InvalidFileNameChars = "\\/:*?\"<>|";
 
+        private const int MaxSanitizedFileNameLength = 100;
+
         /// <summary>
         /// Makes a user name safe to use as a file name on any platform by replacing
-        /// reserved and control characters with underscores.
+        /// reserved and control characters with underscores and capping the length.
+        /// Overlong names are truncated with a stable hash suffix so distinct names
+        /// do not collide.
         /// </summary>
         public static string SanitizeFileName(string name)
         {
@@ -68,6 +72,12 @@ namespace TournamentParser.Util
             foreach (var character in name)
             {
                 sanitized.Append(character < ' ' || InvalidFileNameChars.Contains(character) ? '_' : character);
+            }
+            if (sanitized.Length > MaxSanitizedFileNameLength)
+            {
+                var hash = System.Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(name)))[..8];
+                return sanitized.ToString(0, MaxSanitizedFileNameLength - 9) + "-" + hash;
             }
             return sanitized.ToString();
         }

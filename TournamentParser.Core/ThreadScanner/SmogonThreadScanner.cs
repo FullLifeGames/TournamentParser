@@ -396,12 +396,24 @@ namespace TournamentParser.ThreadScanner
             return match;
         }
 
+        /// <summary>XenForo user names cannot be longer than 50 characters.</summary>
+        private const int MaxUserNameLength = 50;
+
         private void SetupUsers(Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, TournamentMatch match, string toFilterFor, string preparedLine)
         {
             var separator = " " + toFilterFor + " ";
             var separatorIndex = preparedLine.IndexOf(separator);
             var userOne = preparedLine[..separatorIndex];
             var userTwo = preparedLine[(separatorIndex + separator.Length)..];
+
+            // Pairing lines often carry a score or free-form commentary after a dash
+            // ("A vs B - 2-0", "A vs B - this will be close..."); only the name before
+            // the dash belongs to the second user.
+            var dashIndex = userTwo.IndexOf(" - ");
+            if (dashIndex >= 0)
+            {
+                userTwo = userTwo[..dashIndex];
+            }
 
             userOne = _regexUtil.RemovePositions(userOne);
             userTwo = _regexUtil.RemovePositions(userTwo);
@@ -411,6 +423,13 @@ namespace TournamentParser.ThreadScanner
 
             var regexUserOne = _regexUtil.Regex(userOne);
             var regexUserTwo = _regexUtil.Regex(userTwo);
+
+            if (regexUserOne.Length > MaxUserNameLength || regexUserTwo.Length > MaxUserNameLength)
+            {
+                // Longer than any real user name can be: the line is prose that happens
+                // to contain a "vs", not a pairing.
+                return;
+            }
 
             if (NameUserTranslation.TryGetValue(regexUserOne, out User? firstUser))
             {

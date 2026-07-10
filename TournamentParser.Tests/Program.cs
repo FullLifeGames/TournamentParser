@@ -44,7 +44,9 @@ namespace TournamentParser.Tests
             var playingUsers = tournament.ThreadScanner.Users.Where((user) => !user.Matches.IsEmpty);
             var count = playingUsers.Count();
             Assert.That(count >= 2);
-            Assert.That(playingUsers.First().Matches.First().Replays.Count == 3);
+            // Bag order is not deterministic, so assert the "1 | 2 | 3" replay lines parse
+            // into a three-replay match for some user instead of relying on First().
+            Assert.That(playingUsers.Any((user) => user.Matches.Any((match) => match.Replays.Count == 3)));
             Assert.That(!tournament.ThreadScanner.NameUserTranslation.IsEmpty);
         }
 
