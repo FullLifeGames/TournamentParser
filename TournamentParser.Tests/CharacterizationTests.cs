@@ -135,9 +135,11 @@ namespace TournamentParser.Tests
 
         private const string SyntheticThreadUrl = "https://www.smogon.com/forums/threads/test-tour-round-1.4242/";
 
-        private static string BuildSyntheticPage()
+        private static string BuildSyntheticPage() => SyntheticPages.ThreadPage("Test Tour - Round 1", BuildSyntheticPosts());
+
+        private static List<SyntheticPages.Post> BuildSyntheticPosts()
         {
-            return SyntheticPages.ThreadPage("Test Tour - Round 1", new[]
+            return new List<SyntheticPages.Post>
             {
                 new SyntheticPages.Post
                 {
@@ -162,13 +164,13 @@ namespace TournamentParser.Tests
                         "<a href=\"https://replay.pokemonshowdown.com/gen8ou-2222\">win</a>",
                     },
                 },
-            });
+            };
         }
 
         private static SmogonThreadScanner ScanSyntheticThread(out FakeHttpMessageHandler fake)
         {
             fake = new FakeHttpMessageHandler();
-            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
+            fake.Map(SyntheticThreadUrl, BuildSyntheticPage());
             Common.HttpClient = new HttpClient(fake);
 
             var scanner = new SmogonThreadScanner();
@@ -233,7 +235,7 @@ namespace TournamentParser.Tests
         public void SyntheticScan_TopicAnalyzeResult_PinsPagesLinksAndLastPost()
         {
             var fake = new FakeHttpMessageHandler();
-            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
+            fake.Map(SyntheticThreadUrl, BuildSyntheticPage());
             Common.HttpClient = new HttpClient(fake);
 
             var scanner = new SmogonThreadScanner();
@@ -242,7 +244,8 @@ namespace TournamentParser.Tests
             Assert.That(result.NumberOfPages, Is.EqualTo(1));
             Assert.That(result.CollectedLinks, Has.Count.EqualTo(1));
             Assert.That(result.LastPost, Is.EqualTo(new DateTime(2021, 3, 23, 17, 30, 0)));
-            Assert.That(fake.Requests, Is.EqualTo(new[] { SyntheticThreadUrl + "page-1" }));
+            // Page 1 without suffix: ".../page-1" answers with a redirect, which costs a second request.
+            Assert.That(fake.Requests, Is.EqualTo(new[] { SyntheticThreadUrl }));
         }
 
         [Test]
@@ -268,7 +271,7 @@ namespace TournamentParser.Tests
         public void ScanThreads_WithoutCache_ScansViaHttp()
         {
             var fake = new FakeHttpMessageHandler();
-            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
+            fake.Map(SyntheticThreadUrl, BuildSyntheticPage());
             Common.HttpClient = new HttpClient(fake);
 
             var scanner = new SmogonThreadScanner();
@@ -282,135 +285,63 @@ namespace TournamentParser.Tests
         }
 
         [Test]
-        public void ScanThreads_WritesAnalyzeResultToCache()
+        public void ScanThreads_WithCrawlState_ParsesStoredPagesWithoutRequests()
         {
+            var forum = new FakeForum();
+            var section = new FakeForum.Forum { Title = "Tournaments", Path = "/forums/forums/tournaments.34/" };
+            forum.Sections.Add(section);
+            section.Threads.Add(new FakeForum.Thread
+            {
+                Id = 4242,
+                Slug = "test-tour-round-1",
+                Title = "Test Tour - Round 1",
+                Pages = { BuildSyntheticPosts() },
+            });
             var fake = new FakeHttpMessageHandler();
-            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
-            Common.HttpClient = new HttpClient(fake);
+            forum.Serve(fake);
             var cache = new InMemoryDistributedCache();
-
-            var scanner = new SmogonThreadScanner(cache);
-            scanner.ScanThreads(new Dictionary<string, List<string>>
-            {
-                { "forum", new List<string> { SyntheticThreadUrl } },
-            }).Wait();
-
-            Assert.That(cache.Store.ContainsKey(SyntheticThreadUrl), Is.True);
-            var cached = JsonConvert.DeserializeObject<TopicAnalyzeResult>(
-                Encoding.UTF8.GetString(cache.Store[SyntheticThreadUrl]))!;
-            Assert.That(cached.NumberOfPages, Is.EqualTo(1));
-            Assert.That(cached.LastPost, Is.EqualTo(new DateTime(2021, 3, 23, 17, 30, 0)));
-            Assert.That(cached.CollectedLinks, Has.Count.EqualTo(1));
-        }
-
-        [Test]
-        public void ScanThreads_WritesLastPostMetaEntry()
-        {
-            // A small companion entry with just the last post date lets future runs decide
-            // whether a thread is stale without loading the full page-content entry.
-            var fake = new FakeHttpMessageHandler();
-            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
-            Common.HttpClient = new HttpClient(fake);
-            var cache = new InMemoryDistributedCache();
-
-            new SmogonThreadScanner(cache).ScanThreads(new Dictionary<string, List<string>>
-            {
-                { "forum", new List<string> { SyntheticThreadUrl } },
-            }).Wait();
-
-            var metaKey = SyntheticThreadUrl + SmogonThreadScanner.LastPostCacheKeySuffix;
-            Assert.That(cache.Store.ContainsKey(metaKey), Is.True);
-            var lastPost = DateTime.Parse(
-                Encoding.UTF8.GetString(cache.Store[metaKey]),
-                System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.RoundtripKind);
-            Assert.That(lastPost, Is.EqualTo(new DateTime(2021, 3, 23, 17, 30, 0)));
-        }
-
-        [Test]
-        public void ScanThreads_WithRecentCacheEntry_RescansViaHttp()
-        {
-            // A cached thread whose last post is recent must be re-scanned.
-            var cache = new InMemoryDistributedCache();
-            var recentResult = new TopicAnalyzeResult
-            {
-                CollectedLinks = new List<string> { "stale content" },
-                NumberOfPages = 1,
-                LastPost = DateTime.Now.AddDays(-1),
-            };
-            cache.Store[SyntheticThreadUrl] = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(recentResult));
-
-            var fake = new FakeHttpMessageHandler();
-            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
-            Common.HttpClient = new HttpClient(fake);
-
-            var scanner = new SmogonThreadScanner(cache);
-            scanner.ScanThreads(new Dictionary<string, List<string>>
-            {
-                { "forum", new List<string> { SyntheticThreadUrl } },
-            }).Wait();
-
-            Assert.That(fake.Requests, Does.Contain(SyntheticThreadUrl + "page-1"));
-            Assert.That(scanner.NameUserTranslation.Keys,
-                Is.EquivalentTo(new[] { "alice", "bob", "carol", "tourhost" }));
-        }
-
-        [Test]
-        public void ScanThreads_WithLegacyCacheEntry_WithoutMetaKey_StillUsesCache()
-        {
-            // Cache entries written before the meta key existed must keep working.
-            var fake = new FakeHttpMessageHandler();
-            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
-            Common.HttpClient = new HttpClient(fake);
-            var seedCache = new InMemoryDistributedCache();
-            new SmogonThreadScanner(seedCache).ScanThreads(new Dictionary<string, List<string>>
-            {
-                { "forum", new List<string> { SyntheticThreadUrl } },
-            }).Wait();
-
-            // Copy only the legacy full entry into a fresh cache (no meta key).
-            var legacyCache = new InMemoryDistributedCache();
-            legacyCache.Store[SyntheticThreadUrl] = seedCache.Store[SyntheticThreadUrl];
+            var threads = new SmogonThreadCollector(cache, new CollectorOptions { HttpClient = new HttpClient(fake) })
+                .GetGeneralThreadsForForums("Tournaments").Result;
 
             var offlineFake = new FakeHttpMessageHandler();
             Common.HttpClient = new HttpClient(offlineFake);
-            var scanner = new SmogonThreadScanner(legacyCache);
-            scanner.ScanThreads(new Dictionary<string, List<string>>
-            {
-                { "forum", new List<string> { SyntheticThreadUrl } },
-            }).Wait();
-
-            Assert.That(offlineFake.Requests, Is.Empty);
-            Assert.That(scanner.NameUserTranslation.Keys,
-                Is.EquivalentTo(new[] { "alice", "bob", "carol", "tourhost" }));
-        }
-
-        [Test]
-        public void ScanThreads_WithStaleCacheEntry_UsesCacheAndSkipsHttp()
-        {
-            // First scan to produce a cache entry (LastPost is 2021 => older than 6 months).
-            var fake = new FakeHttpMessageHandler();
-            fake.Map(SyntheticThreadUrl + "page-1", BuildSyntheticPage());
-            Common.HttpClient = new HttpClient(fake);
-            var cache = new InMemoryDistributedCache();
-            new SmogonThreadScanner(cache).ScanThreads(new Dictionary<string, List<string>>
-            {
-                { "forum", new List<string> { SyntheticThreadUrl } },
-            }).Wait();
-
-            // Second scan with an empty fake handler: everything must come from the cache.
-            var offlineFake = new FakeHttpMessageHandler();
-            Common.HttpClient = new HttpClient(offlineFake);
             var scanner = new SmogonThreadScanner(cache);
-            scanner.ScanThreads(new Dictionary<string, List<string>>
-            {
-                { "forum", new List<string> { SyntheticThreadUrl } },
-            }).Wait();
+            scanner.ScanThreads(threads).Wait();
 
             Assert.That(offlineFake.Requests, Is.Empty);
             Assert.That(scanner.NameUserTranslation.Keys,
                 Is.EquivalentTo(new[] { "alice", "bob", "carol", "tourhost" }));
             Assert.That(scanner.NameUserTranslation["alice"].Matches.Count, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void ScanThreads_ThreadUnknownToTheCrawlState_IsReadFromSmogon()
+        {
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(SyntheticThreadUrl, BuildSyntheticPage());
+            Common.HttpClient = new HttpClient(fake);
+
+            var scanner = new SmogonThreadScanner(new InMemoryDistributedCache());
+            scanner.ScanThreads(new Dictionary<string, List<string>>
+            {
+                { "forum", new List<string> { SyntheticThreadUrl } },
+            }).Wait();
+
+            Assert.That(fake.Requests, Is.EqualTo(new[] { SyntheticThreadUrl }));
+            Assert.That(scanner.NameUserTranslation.Keys,
+                Is.EquivalentTo(new[] { "alice", "bob", "carol", "tourhost" }));
+        }
+
+        [Test]
+        public void AnalyzeTopic_BotCheckInsteadOfThreadPage_ReturnsNull()
+        {
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(SyntheticThreadUrl, "<html><body><p id=\"m\">Checking your browser...</p><script>document.cookie = \"xf_smogon_gate=1\"</script></body></html>");
+            Common.HttpClient = new HttpClient(fake);
+
+            var scanner = new SmogonThreadScanner();
+            Assert.That(scanner.AnalyzeTopic(SyntheticThreadUrl, CancellationToken.None).Result, Is.Null);
+            Assert.That(scanner.NameUserTranslation, Is.Empty);
         }
 
         [Test]
@@ -449,7 +380,7 @@ namespace TournamentParser.Tests
             }, totalPages: 3);
 
             var fake = new FakeHttpMessageHandler();
-            fake.Map(url + "page-1", page1);
+            fake.Map(url, page1);
             fake.Map(url + "page-2", page2);
             fake.Map(url + "page-3", page3);
             Common.HttpClient = new HttpClient(fake);
@@ -464,8 +395,8 @@ namespace TournamentParser.Tests
             Assert.That(result.CollectedLinks[0], Does.Contain("Dave vs. Erin"));
             Assert.That(result.CollectedLinks[1], Does.Contain("Frank vs. Grace"));
             Assert.That(result.CollectedLinks[2], Does.Contain("Heidi vs. Ivan"));
-            // All three pages requested (in any order once fetching is parallelized).
-            Assert.That(fake.Requests, Is.EquivalentTo(new[] { url + "page-1", url + "page-2", url + "page-3" }));
+            // One page after the other: all pages live on one host.
+            Assert.That(fake.Requests, Is.EqualTo(new[] { url, url + "page-2", url + "page-3" }));
 
             // Post numbers: only posts 1-2 create matches from vs-lines; on later pages
             // PostNumber continues at (page-1)*25, so their vs-lines create no users/matches.
@@ -486,7 +417,7 @@ namespace TournamentParser.Tests
             fake = new FakeHttpMessageHandler();
             for (var page = 1; page <= 5; page++)
             {
-                fake.Map(FixtureThreadUrl + "page-" + page, Fixture($"ost-xvii-finals-page-{page}.html"));
+                fake.Map(page == 1 ? FixtureThreadUrl : FixtureThreadUrl + "page-" + page, Fixture($"ost-xvii-finals-page-{page}.html"));
             }
             Common.HttpClient = new HttpClient(fake);
 
@@ -503,8 +434,8 @@ namespace TournamentParser.Tests
 
             Assert.That(result.NumberOfPages, Is.EqualTo(5));
             Assert.That(result.CollectedLinks, Has.Count.EqualTo(5));
-            Assert.That(fake.Requests, Is.EquivalentTo(
-                Enumerable.Range(1, 5).Select(p => FixtureThreadUrl + "page-" + p)));
+            Assert.That(fake.Requests, Is.EqualTo(
+                Enumerable.Range(1, 5).Select(p => p == 1 ? FixtureThreadUrl : FixtureThreadUrl + "page-" + p)));
 
             var playingUsers = scanner.Users.Where(user => !user.Matches.IsEmpty).ToList();
             Assert.That(playingUsers.Count, Is.EqualTo(2));
@@ -552,7 +483,7 @@ namespace TournamentParser.Tests
             // parsed as a match line.
             const string url = "https://www.smogon.com/forums/threads/smogons-official-ladder-tournament-v-replay-thread.3640819/";
             var fake = new FakeHttpMessageHandler();
-            fake.Map(url + "page-1", Fixture("olt-v-replay-page-1.html"));
+            fake.Map(url, Fixture("olt-v-replay-page-1.html"));
             Common.HttpClient = new HttpClient(fake);
 
             var scanner = new SmogonThreadScanner();
@@ -611,7 +542,7 @@ namespace TournamentParser.Tests
                 },
             });
             var fake = new FakeHttpMessageHandler();
-            fake.Map(url + "page-1", page);
+            fake.Map(url, page);
             Common.HttpClient = new HttpClient(fake);
 
             var scanner = new SmogonThreadScanner();
@@ -638,7 +569,7 @@ namespace TournamentParser.Tests
                 },
             });
             var fake = new FakeHttpMessageHandler();
-            fake.Map(url + "page-1", page);
+            fake.Map(url, page);
             Common.HttpClient = new HttpClient(fake);
 
             var scanner = new SmogonThreadScanner();
@@ -656,7 +587,7 @@ namespace TournamentParser.Tests
             var fake = new FakeHttpMessageHandler();
             for (var page = 1; page <= 5; page++)
             {
-                fake.Map(url + "page-" + page, Fixture($"uu-open-xii-r2-page-{page}.html"));
+                fake.Map(page == 1 ? url : url + "page-" + page, Fixture($"uu-open-xii-r2-page-{page}.html"));
             }
             Common.HttpClient = new HttpClient(fake);
 
@@ -678,47 +609,108 @@ namespace TournamentParser.Tests
 
         #endregion
 
-        #region Collector on synthetic pages
+        #region Collector
 
         [Test]
-        public void Collector_FindsSubforumsAndThreads()
+        public void Collector_FindsSubforumsAndThreads_WithHttpsUrls()
         {
+            var forum = new FakeForum();
+            var section = new FakeForum.Forum { Title = "Tournaments", Path = "/forums/forums/tournaments.34/" };
+            var alpha = new FakeForum.Forum { Title = "Tour Alpha", Path = "/forums/forums/tour-alpha.100/" };
+            section.SubForums.Add(alpha);
+            forum.Sections.Add(section);
+            alpha.Threads.Add(new FakeForum.Thread { Id = 111, Slug = "alpha-round-1", Title = "Alpha Round 1", Pages = { BuildSyntheticPosts() } });
             var fake = new FakeHttpMessageHandler();
-            fake.MapBothSchemes("www.smogon.com/forums/",
-                SyntheticPages.ForumMainPage("Tournaments", "/forums/forums/tour-alpha.100/", "Tour Alpha"));
-            var listing = SyntheticPages.ForumListingPage("/forums/threads/alpha-round-1.111/");
-            fake.MapBothSchemes("www.smogon.com/forums/forums/tour-alpha.100/", listing);
-            fake.MapBothSchemes("www.smogon.com/forums/forums/tour-alpha.100/page-1", listing);
-            Common.HttpClient = new HttpClient(fake);
+            forum.Serve(fake);
 
-            var collector = new SmogonThreadCollector();
-            var threads = collector.GetGeneralThreadsForForums("Tournaments").Result;
+            var threads = new SmogonThreadCollector(new InMemoryDistributedCache(), new CollectorOptions { HttpClient = new HttpClient(fake) })
+                .GetGeneralThreadsForForums("Tournaments").Result;
 
-            Assert.That(threads, Has.Count.EqualTo(1));
-            var (forumUrl, threadUrls) = threads.Single();
-            Assert.That(forumUrl, Does.EndWith("/forums/forums/tour-alpha.100/"));
-            Assert.That(threadUrls, Has.Count.EqualTo(1));
-            Assert.That(threadUrls[0], Does.EndWith("/forums/threads/alpha-round-1.111/"));
-            Assert.That(threadUrls[0], Does.StartWith("http"));
+            Assert.That(threads.Keys, Is.EqualTo(new[]
+            {
+                "https://www.smogon.com/forums/forums/tournaments.34/",
+                "https://www.smogon.com/forums/forums/tour-alpha.100/",
+            }));
+            Assert.That(threads["https://www.smogon.com/forums/forums/tour-alpha.100/"],
+                Is.EqualTo(new[] { "https://www.smogon.com/forums/threads/alpha-round-1.111/" }));
+            Assert.That(fake.Requests, Has.All.StartWith("https://"));
         }
 
         [Test]
-        public void Collector_ProducesHttpsUrls()
+        public void ForumIndexFixture_FindsTheScannedSectionsByTheirNodes()
         {
+            // The forum index of Nov 8, 2026. The text marker ">Tournaments<" used to match a thread prefix first, which
+            // pulled VGC, BSS, TCG and Bug Reports into the tournament forums; "Battle Stadium" no longer exists.
+            var index = Fixture("forum-index-2026-11-08.html");
+
+            var nodes = ForumPageParser.ParseNodes(index);
+            var tournaments = nodes.Single(node => node.Title == "Tournaments");
+            Assert.That(tournaments.Url, Is.EqualTo("https://www.smogon.com/forums/forums/tournaments.34/"));
+            Assert.That(tournaments.LatestPostTimestamp, Is.EqualTo(1794154379));
+            Assert.That(nodes.Single(node => node.Title == "Smogon Metagames").Url, Is.EqualTo("https://www.smogon.com/forums/forums/smogon-metagames.725/"));
+            Assert.That(nodes.Single(node => node.Title == "Ruins of Alph").LatestPostTimestamp, Is.GreaterThan(0));
+            Assert.That(nodes.Select(node => node.Title), Does.Contain("Pokémon Showdown!"), "HTML entities are decoded");
+
+            var links = ForumPageParser.ParseSubNodeLinks(index);
+            Assert.That(links.Single(link => link.Title == "PS! Tournaments").Url, Is.EqualTo(SmogonThreadCollector.PsTournamentsUrl));
+            Assert.That(links.Single(link => link.Title == "Battle Stadium Singles").Url,
+                Is.EqualTo("https://www.smogon.com/forums/forums/battle-stadium-singles.532/"));
+            Assert.That(links.Select(link => link.Url), Has.None.Contains("/link-forums/"), "link forums are skipped");
+        }
+
+        [Test]
+        public void ForumListingFixture_ParsesThreadsAndSubforums()
+        {
+            var listing = Fixture("tournaments-listing-2026-11-08-page-1.html");
+
+            var subForums = ForumPageParser.ParseNodes(listing);
+            Assert.That(subForums, Has.Count.EqualTo(12));
+            var circuits = subForums.Single(node => node.Title == "Circuit Tournaments");
+            Assert.That(circuits.Url, Is.EqualTo("https://www.smogon.com/forums/forums/circuit-tournaments.351/"));
+            Assert.That(circuits.LatestPostTimestamp, Is.EqualTo(1794167746));
+
+            var threads = ForumPageParser.ParseThreads(listing);
+            Assert.That(threads, Has.Count.EqualTo(52), "53 items, one of them a moved-thread redirect");
+            Assert.That(threads.TakeWhile(thread => thread.Sticky).Count(), Is.EqualTo(13));
+            var first = threads[0];
+            Assert.That(first.ThreadId, Is.EqualTo(3788984));
+            Assert.That(first.Url, Is.EqualTo("https://www.smogon.com/forums/threads/programming-note-for-hosts-images-in-tournament-ops.3788984/"));
+            Assert.That(first.Title, Is.EqualTo("Programming Note for Hosts: Images in Tournament OPs"));
+            Assert.That(first.Locked, Is.True);
+            Assert.That(first.LatestPostTimestamp, Is.EqualTo(1790547298));
+            Assert.That(first.LatestPostDisplayDate, Is.EqualTo("Sep 27, 2026 at 6:14 PM"));
+            Assert.That(threads.Select(thread => thread.Title), Has.None.Contains("&#039;").And.None.Contains("&amp;"));
+            Assert.That(threads.Where(thread => !thread.Sticky).Select(thread => thread.LatestPostTimestamp),
+                Is.Ordered.Descending, "listings are sorted by latest post");
+            Assert.That(threads.Max(thread => thread.LastPage), Is.GreaterThan(1), "page jumps give the last page");
+        }
+
+        [Test]
+        public void ExtractImportantLines_KeepsTheSameLinesAsAFullScan()
+        {
+            // The crawl state stores these lines per page; parsing them must give what parsing the whole thread gives.
+            var scanner = ScanFixtureThread(out _, out var result);
+            for (var page = 1; page <= 5; page++)
+            {
+                Assert.That(
+                    SmogonThreadScanner.ExtractImportantLines(FixtureThreadUrl, page, Fixture($"ost-xvii-finals-page-{page}.html")),
+                    Is.EqualTo(result.CollectedLinks[page - 1]), $"page {page}");
+            }
+
+            const string uuUrl = "https://www.smogon.com/forums/threads/the-uu-open-xii-round-2-replays-mandatory-no-exceptions.3721437/";
             var fake = new FakeHttpMessageHandler();
-            fake.MapBothSchemes("www.smogon.com/forums/",
-                SyntheticPages.ForumMainPage("Tournaments", "/forums/forums/tour-alpha.100/", "Tour Alpha"));
-            var listing = SyntheticPages.ForumListingPage("/forums/threads/alpha-round-1.111/");
-            fake.MapBothSchemes("www.smogon.com/forums/forums/tour-alpha.100/", listing);
-            fake.MapBothSchemes("www.smogon.com/forums/forums/tour-alpha.100/page-1", listing);
+            for (var page = 1; page <= 5; page++)
+            {
+                fake.Map(page == 1 ? uuUrl : uuUrl + "page-" + page, Fixture($"uu-open-xii-r2-page-{page}.html"));
+            }
             Common.HttpClient = new HttpClient(fake);
-
-            var threads = new SmogonThreadCollector().GetGeneralThreadsForForums("Tournaments").Result;
-
-            var (forumUrl, threadUrls) = threads.Single();
-            Assert.That(forumUrl, Does.StartWith("https://"));
-            Assert.That(threadUrls[0], Does.StartWith("https://"));
-            Assert.That(fake.Requests, Has.All.StartWith("https://"));
+            var uuResult = new SmogonThreadScanner().AnalyzeTopic(uuUrl, CancellationToken.None).Result!;
+            for (var page = 1; page <= 5; page++)
+            {
+                Assert.That(
+                    SmogonThreadScanner.ExtractImportantLines(uuUrl, page, Fixture($"uu-open-xii-r2-page-{page}.html")),
+                    Is.EqualTo(uuResult.CollectedLinks[page - 1]), $"UU Open page {page}");
+            }
         }
 
         #endregion
@@ -732,10 +724,31 @@ namespace TournamentParser.Tests
         }
 
         [Test]
-        public void Common_HttpClientHandler_EnablesAutomaticDecompression()
+        public void PoliteHttpMessageHandler_EnablesAutomaticDecompression()
         {
-            using var handler = Common.CreateHttpClientHandler();
+            using var handler = PoliteHttpMessageHandler.CreateDefaultInnerHandler();
             Assert.That(handler.AutomaticDecompression, Is.EqualTo(System.Net.DecompressionMethods.All));
+        }
+
+        [Test]
+        public void SmogonPages_BotCheckIsRecognized()
+        {
+            Assert.That(SmogonPages.IsBotCheck("<p id=\"m\">Checking your browser...</p><script>document.cookie = \"xf_smogon_gate=\" + n</script>"), Is.True);
+            Assert.That(SmogonPages.IsBotCheck(Fixture("ost-xvii-finals-page-1.html")), Is.False);
+            Assert.That(SmogonPages.IsBotCheck(Fixture("ost-xvii-finals-page-1.html").Replace("</article>", "my browser is stuck at Checking your browser, cookie xf_smogon_gate</article>")),
+                Is.False, "a post about the gate is no bot check");
+        }
+
+        [Test]
+        public void SmogonPages_ThreadIdsAndPageUrls()
+        {
+            Assert.That(SmogonPages.TryGetThreadId("https://www.smogon.com/forums/threads/spl-xiii-replays.3695657/", out var id), Is.True);
+            Assert.That(id, Is.EqualTo(3695657));
+            Assert.That(SmogonPages.TryGetThreadId("https://www.smogon.com/forums/threads/3695657/", out id), Is.True);
+            Assert.That(id, Is.EqualTo(3695657));
+            Assert.That(SmogonPages.TryGetThreadId("https://www.smogon.com/forums/forums/tournaments.34/", out _), Is.False);
+            Assert.That(SmogonPages.PageUrl("https://www.smogon.com/forums/threads/a.1/", 1), Is.EqualTo("https://www.smogon.com/forums/threads/a.1/"));
+            Assert.That(SmogonPages.PageUrl("https://www.smogon.com/forums/threads/a.1/", 3), Is.EqualTo("https://www.smogon.com/forums/threads/a.1/page-3"));
         }
 
         [Test]

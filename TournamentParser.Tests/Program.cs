@@ -6,11 +6,16 @@ using TournamentParser.Parser;
 
 namespace TournamentParser.Tests
 {
+    /// <summary>
+    /// Tests against the live smogon.com. Explicit, so that "dotnet test" (and CI) sends no requests to Smogon;
+    /// run them on purpose with: dotnet test --filter TestCategory=Live
+    /// </summary>
     [TestFixture]
+    [Explicit]
+    [Category("Live")]
     public class TestTournamentParser
     {
         [Test]
-        [Explicit]
         public void Collector_Test()
         {
             var tournament = new SmogonParser();
@@ -195,7 +200,6 @@ namespace TournamentParser.Tests
         }
 
         [Test]
-        [Explicit]
         public void Map_Full()
         {
             var matches = new SmogonParser().GetMatchesForUsers().Result;

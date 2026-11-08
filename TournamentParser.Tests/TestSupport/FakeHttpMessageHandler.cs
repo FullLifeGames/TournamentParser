@@ -13,6 +13,7 @@ namespace TournamentParser.Tests.TestSupport
     public class FakeHttpMessageHandler : HttpMessageHandler
     {
         private readonly Dictionary<string, string> _responses = new();
+        private readonly Dictionary<string, HttpStatusCode> _statuses = new();
         private readonly object _lock = new();
         private readonly List<string> _requests = new();
 
@@ -27,7 +28,22 @@ namespace TournamentParser.Tests.TestSupport
             }
         }
 
-        public void Map(string url, string content) => _responses[url] = content;
+        public void Map(string url, string content)
+        {
+            _responses[url] = content;
+            _statuses.Remove(url);
+        }
+
+        /// <summary>Answers the URL with an empty response of the given status code.</summary>
+        public void MapStatus(string url, HttpStatusCode statusCode) => _statuses[url] = statusCode;
+
+        public void ClearRequests()
+        {
+            lock (_lock)
+            {
+                _requests.Clear();
+            }
+        }
 
         /// <summary>Maps the same content under both http:// and https:// forms of the URL.</summary>
         public void MapBothSchemes(string urlWithoutScheme, string content)
@@ -42,6 +58,10 @@ namespace TournamentParser.Tests.TestSupport
             lock (_lock)
             {
                 _requests.Add(url);
+            }
+            if (_statuses.TryGetValue(url, out var statusCode))
+            {
+                return Task.FromResult(new HttpResponseMessage(statusCode));
             }
             if (_responses.TryGetValue(url, out var content))
             {
