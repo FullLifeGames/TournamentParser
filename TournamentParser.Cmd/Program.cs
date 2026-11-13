@@ -13,15 +13,16 @@ const string Usage = """
       --no-search             Do not ask Smogon's search which new posts hold replays; read the new
                               pages of every changed tournament thread instead.
       --delay <seconds>       Pause between two requests to Smogon (default 2).
-      --recent-days <days>    Forums and threads with posts younger than this are checked in every run
-                              for locks and title changes (default 7, 0 turns it off).
+      --recent-days <days>    Open tournament threads with posts younger than this are checked in every
+                              run for locks and title changes (default 7, 0 turns it off).
       --max-requests <count>  Stop after this many requests; the next run continues from there
                               (default 0, no limit).
-      --headed                Show the browser window the pages are loaded in.
+      --headed                Show the browser window that passes the bot check.
 
     The crawl state is kept in SmogonTournamentParser.db. After the first run, only new activity is read:
     page 1 of changed threads, and of tournament threads the new pages with replay posts.
-    Pages are loaded with Chromium (Playwright), which is downloaded on the first run.
+    Smogon's bot check is passed with Chromium (Playwright), which is downloaded on the first run;
+    after that, pages are loaded as plain HTTP with the cookie the browser got.
     Exit codes: 0 done, 1 error, 2 bot check or unexpected page, 3 request limit reached, 64 usage.
     Output files are written only after a complete run.
     """;
@@ -61,17 +62,14 @@ for (var i = 0; i < args.Length; i++)
     }
 }
 
-var browser = new PlaywrightHttpMessageHandler(browserOptions);
-var httpHandler = new PoliteHttpMessageHandler(httpOptions, browser);
+// Plain HTTP; the browser starts for the first bot check and passes its cookie on.
+var httpHandler = new PoliteHttpMessageHandler(httpOptions, new BrowserCookieHttpMessageHandler(new PlaywrightHttpMessageHandler(browserOptions)));
 Common.HttpClient = PoliteHttpMessageHandler.CreateClient(httpHandler);
 
 SQLitePCL.Batteries_V2.Init();
 
 try
 {
-    Console.WriteLine("Starting browser...");
-    await browser.StartAsync().ConfigureAwait(false);
-
     var tournament = new SmogonParser(
         new SqliteCache(
             new SqliteCacheOptions()

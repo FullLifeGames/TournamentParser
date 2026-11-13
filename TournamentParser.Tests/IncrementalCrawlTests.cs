@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using Newtonsoft.Json;
 using NUnit.Framework;
 using System;
@@ -446,6 +446,30 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void QuietForum_IsListedOnlyWhileItHasOpenTournamentThreads()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var alpha = Sub(section, "Tour Alpha", TourAlpha);
+            var start = DateTime.UtcNow.AddDays(-2);
+            var recent = new DateTime(start.Year, start.Month, start.Day, start.Hour, start.Minute, 0);
+            var tour = TourThread(1, 1, recent);
+            alpha.Threads.Add(tour);
+            section.Threads.Add(ChatThread(2, 1, recent));
+            Crawl();
+
+            Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), Url(TourAlpha) }),
+                "the open tournament thread may still be locked or renamed");
+
+            tour.Locked = true;
+            Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), Url(TourAlpha), tour.Url }));
+
+            Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl }), "a discussion thread and a locked tournament thread need no checks");
+        }
+
+        [Test]
         public void MovedThread_IsReturnedOnceUnderItsNewForum()
         {
             var section = Section("Tournaments", Tournaments);
@@ -590,18 +614,24 @@ namespace TournamentParser.Tests
         }
 
         [Test]
-        public void ThreadWithoutPairings_TitleChange_ReadsPageOne()
+        public void ThreadWithoutPairings_TitleChange_IsNoticedWithTheNextPostInItsForum()
         {
             var section = Section("Tournaments", Tournaments);
             var start = DateTime.UtcNow.AddDays(-2);
-            var chat = ChatThread(1, 3, new DateTime(start.Year, start.Month, start.Day, start.Hour, start.Minute, 0));
-            section.Threads.Add(chat);
+            var recent = new DateTime(start.Year, start.Month, start.Day, start.Hour, start.Minute, 0);
+            var chat = ChatThread(1, 3, recent);
+            var other = ChatThread(2, 1, recent);
+            section.Threads.AddRange(new[] { chat, other });
             Crawl();
 
             chat.Title = "Discussion 1 - Round 1";
             Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl }), "a forum without open tournament threads is not listed for title changes");
 
-            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), chat.Url }));
+            other.Pages[0].Add(ChatPost(2, "Gil", Newest()));
+            Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), chat.Url }),
+                "the host may have turned the thread into a tournament");
         }
 
         [Test]
@@ -642,7 +672,47 @@ namespace TournamentParser.Tests
 
             tour.Pages[4].Add(ChatPost(1, "Gil", Newest()));
             threads = Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments) }), "no replay post, no read");
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+        }
+
+        [Test]
+        public void ThreadWithPairings_WinnerBoldedWithoutReplay_ShowsUpAtTheLock()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var start = DateTime.UtcNow.AddDays(-2);
+            var tour = TourThread(1, 1, new DateTime(start.Year, start.Month, start.Day, start.Hour, start.Minute, 0));
+            section.Threads.Add(tour);
+            Crawl();
+
+            tour.Pages[0][0].BodyLines[2] = "<b>Eve1</b> vs. Fay1";
+            tour.Pages[0].Add(ChatPost(1, "Gil", Newest()));
+            var threads = Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments) }));
+            Assert.That(MatchSummary(Scan(threads)), Has.Some.StartsWith("eve1: eve1 vs fay1 w= "), "the edit is not seen yet");
+
+            tour.Locked = true;
+            threads = Crawl();
             Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), tour.Url }));
+            var summary = MatchSummary(Scan(threads));
+            Assert.That(summary, Has.Some.StartsWith("eve1: eve1 vs fay1 w=eve1 f=True"));
+            Assert.That(summary, Is.EqualTo(CompleteMatchSummary()));
+        }
+
+        [Test]
+        public void ThreadWithPairings_ThatGotShorter_IsRead()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var tour = TourThread(1, 3, OldStart);
+            section.Threads.Add(tour);
+            Crawl();
+
+            tour.Pages.RemoveAt(2);
+            tour.Pages[1].Add(ChatPost(1, "Gil", Newest()));
+            var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), tour.Url }));
+            Assert.That(_cache.Store.Keys, Has.None.EqualTo("tp:v3:page:1:3"));
             Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
         }
 
@@ -748,6 +818,23 @@ namespace TournamentParser.Tests
 
             // The fake search does not find posts dated in the future, like a post sent while the search runs.
             tour.Pages[2].Add(ReplayPost(1, "Cat", 99, FakeForum.ToDateTitle(DateTime.UtcNow.AddMinutes(30))));
+            var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), tour.Url, tour.Url + "page-3" }));
+            Assert.That(MatchSummary(Scan(threads)), Has.Some.Contains("gen9ou-1099"));
+        }
+
+        [Test]
+        public void PostNotYetInTheSearchIndex_IsReadWithoutTheSearch()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var tour = TourThread(1, 3, OldStart);
+            section.Threads.Add(tour);
+            Crawl();
+
+            _forum.SearchIndexLag = TimeSpan.FromMinutes(10);
+            var now = DateTime.UtcNow;
+            tour.Pages[2].Add(ReplayPost(1, "Cat", 99, FakeForum.ToDateTitle(new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0).AddMinutes(-5))));
             var threads = Crawl();
 
             Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), tour.Url, tour.Url + "page-3" }));

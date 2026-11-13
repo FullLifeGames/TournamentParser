@@ -23,9 +23,9 @@ namespace TournamentParser.ThreadCollector
     /// page 1 is read.
     /// </item>
     /// <item>
-    /// Smogon's search finds the replay posts since the last run (<see cref="CollectorOptions.UseSearch"/>). Of a thread with
-    /// pairings and new posts, page 1 (the tournament post) and the new pages with replay posts are read. Page 1 of a thread
-    /// without pairings is read again when the search finds a replay post in it, or when its title or lock changes.
+    /// Smogon's search finds the replay posts since the last run (<see cref="CollectorOptions.UseSearch"/>). A thread with new
+    /// posts is read only if the search finds new replay posts in it, or its title or lock changes: then page 1 (the tournament
+    /// post), and of a thread with pairings the new pages with replay posts. Replay threads are read on every new post.
     /// </item>
     /// </list>
     /// See <see cref="CollectorOptions"/> for the exceptions to this.
@@ -42,6 +42,12 @@ namespace TournamentParser.ThreadCollector
         /// them hold replay posts. Tournament threads have replays on most pages, so for a few pages the search costs more than it saves.
         /// </summary>
         private const int DirectReadLimit = 5;
+
+        /// <summary>
+        /// Posts are assumed to be in Smogon's search index this long after they were made. A thread whose latest post is
+        /// younger than this when the search starts is read as if there were no search.
+        /// </summary>
+        private static readonly TimeSpan SearchIndexDelay = TimeSpan.FromMinutes(15);
 
         private readonly CrawlStateStore _store;
         private readonly CollectorOptions _options;
@@ -140,7 +146,8 @@ namespace TournamentParser.ThreadCollector
         /// <summary>The replay posts a search found, and the forums (with their subforums) it covers from its start back to the last run.</summary>
         private sealed record ForumSearch(IReadOnlySet<long> CoveredNodes, DateTime StartedAt, IReadOnlyDictionary<long, List<SearchHit>> HitsByThread)
         {
-            public long StartedAtTimestamp => new DateTimeOffset(StartedAt, TimeSpan.Zero).ToUnixTimeSeconds();
+            /// <summary>Posts up to this time (Unix seconds) are in the search results.</summary>
+            public long IndexedUntilTimestamp => new DateTimeOffset(StartedAt - SearchIndexDelay, TimeSpan.Zero).ToUnixTimeSeconds();
 
             public bool Covers(string forumUrl) => SmogonPages.GetForumId(forumUrl) is long nodeId && CoveredNodes.Contains(nodeId);
 
@@ -176,7 +183,10 @@ namespace TournamentParser.ThreadCollector
 
             var startedAt = DateTime.UtcNow;
             var nodeIds = searchable.Select(forum => forum.NodeId).Distinct().ToList();
-            var result = await _postSearch.SearchForumsAsync(nodeIds, searchable.Min(forum => forum.CoveredUntil).Date.AddDays(-1)).ConfigureAwait(false);
+            var lastRun = searchable.Min(forum => forum.CoveredUntil);
+            // Result pages are read back to the last run (an hour of margin for clock differences); the date filter is the
+            // day before, as Smogon reads it in its own time zone.
+            var result = await _postSearch.SearchForumsAsync(nodeIds, lastRun.Date.AddDays(-1), lastRun - TimeSpan.FromHours(1)).ConfigureAwait(false);
             if (result == null)
             {
                 _searchUnavailable = true;
@@ -271,6 +281,7 @@ namespace TournamentParser.ThreadCollector
             toUpdate.AddRange(forum.RetryThreads.Values.Where(item => !seen.Contains(item.ThreadId)));
 
             var updatedThreads = 0;
+            var openThreadsLatestPost = 0L;
             foreach (var item in toUpdate)
             {
                 var result = await UpdateThreadAsync(item, url, search, retry: forum.RetryThreads.ContainsKey(item.ThreadId)).ConfigureAwait(false);
@@ -286,7 +297,15 @@ namespace TournamentParser.ThreadCollector
                 {
                     forum.RetryThreads.Remove(item.ThreadId);
                 }
+                // The listing shows every thread with a post since recentSince, so this covers all threads of the forum that
+                // may still be locked or renamed without a new post.
+                if (!item.Locked && item.LatestPostTimestamp >= recentSince && _store.GetThread(item.ThreadId) is ThreadCrawlState thread
+                    && thread.NeedsPagesAfterFirst(thread.Url))
+                {
+                    openThreadsLatestPost = Math.Max(openThreadsLatestPost, item.LatestPostTimestamp);
+                }
             }
+            forum.OpenThreadsLatestPost = openThreadsLatestPost;
 
             if (walkedAllPages)
             {
@@ -321,11 +340,34 @@ namespace TournamentParser.ThreadCollector
 
         /// <summary>
         /// Neither the forum nor any of its subforums got a post since the last run (<paramref name="nodeTimestamp"/> is the latest
-        /// post the parent forum shows), and none recently, which could still bring a lock or title change.
+        /// post the parent forum shows), and none of their recently active threads with pairings is still open: those could be
+        /// locked or renamed without a new post. Other threads yield no matches from a lock or new title.
         /// </summary>
-        private bool IsUnchanged(ForumCrawlState forum, long nodeTimestamp) =>
-            forum.Complete && !_options.FullRefresh && nodeTimestamp > 0 && nodeTimestamp == forum.NodeTimestamp
-            && nodeTimestamp < DateTimeOffset.UtcNow.Subtract(_options.RecentActivityWindow).ToUnixTimeSeconds();
+        private bool IsUnchanged(ForumCrawlState forum, long nodeTimestamp)
+        {
+            if (!forum.Complete || _options.FullRefresh || nodeTimestamp <= 0 || nodeTimestamp != forum.NodeTimestamp)
+            {
+                return false;
+            }
+            var recentSince = DateTimeOffset.UtcNow.Subtract(_options.RecentActivityWindow).ToUnixTimeSeconds();
+            return nodeTimestamp < recentSince || !HasOpenThreadsSince(forum, recentSince, []);
+        }
+
+        private bool HasOpenThreadsSince(ForumCrawlState forum, long since, HashSet<string> visited)
+        {
+            if (forum.OpenThreadsLatestPost is not long latestPost || latestPost >= since)
+            {
+                return true;
+            }
+            foreach (var subForumUrl in forum.SubForums)
+            {
+                if (visited.Add(subForumUrl) && (_store.GetForum(subForumUrl) is not ForumCrawlState subForum || HasOpenThreadsSince(subForum, since, visited)))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         private void AddStoredSubtree(string url, List<string> forums)
         {
@@ -429,15 +471,24 @@ namespace TournamentParser.ThreadCollector
 
             var listedLastPage = Math.Max(1, item.LastPage);
             var newThread = _options.FullRefresh || state == null || state.NumberOfPages == 0;
-            // The search found every replay post up to its start. A thread that failed before may have older unread posts.
-            var covered = search != null && !retry && !newThread && item.LatestPostTimestamp < search.StartedAtTimestamp;
+            // The search found every replay post that was in its index. A thread that failed before may have older unread posts.
+            var covered = search != null && !retry && !newThread && item.LatestPostTimestamp < search.IndexedUntilTimestamp;
             var knownUntil = state?.LatestPostTimestamp ?? 0;
             var newHits = (search?.HitsOf(item.ThreadId) ?? []).Where(hit => ToTimestamp(hit.PostDate) > knownUntil).ToList();
 
-            if (covered && !state!.NeedsPagesAfterFirst(item.Url) && !titleOrLockChanged && !state.MissingPages.Any() && newHits.Count == 0)
+            if (covered && newHits.Count == 0 && !titleOrLockChanged && !state!.MissingPages.Any()
+                && !SmogonThreadScanner.IsReplayThread(item.Url) && listedLastPage >= state.NumberOfPages)
             {
-                // Without pairings only page 1 can yield matches, and nothing suggests that it changed: a host who adds pairings
-                // to it is followed by replay posts, which the search finds.
+                // The new posts hold no replays, so they yield no matches: pairings are only taken from posts 1 and 2. Nothing
+                // suggests that page 1 changed either. A host who adds pairings or bolds winners there is seen at the next replay
+                // post, the lock or the new title. (A thread that got shorter is read: its replay posts moved.)
+                for (var page = 2; page <= listedLastPage && state.NeedsPagesAfterFirst(item.Url); page++)
+                {
+                    if (!state.StoredPages.Contains(page) && !state.LegacyPages.Contains(page))
+                    {
+                        state.SkippedPages.Add(page);
+                    }
+                }
                 state.LatestPostTimestamp = item.LatestPostTimestamp;
                 state.NumberOfPages = listedLastPage;
                 state.Url = item.Url;
@@ -503,7 +554,7 @@ namespace TournamentParser.ThreadCollector
                 }
                 else if (covered && neededPagesBefore && backfill.Count == 0)
                 {
-                    // Posts the listing shows after the search started are not covered; they wait for the next run.
+                    // Posts the listing shows after the search are not covered; they wait for the next run.
                     extendToEnd = false;
                     numberOfPages = Math.Min(numberOfPages, listedLastPage);
                     candidates.RemoveWhere(page => page > numberOfPages);

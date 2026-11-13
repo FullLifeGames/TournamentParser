@@ -169,6 +169,24 @@ namespace TournamentParser.Tests
                         // The browser left already
                     }
                     return;
+                case "/with-resources":
+                    // The head arrives first, so that a browser starts loading what it names while the body is on its way.
+                    response.ContentType = contentType;
+                    response.SendChunked = true;
+                    response.OutputStream.Write(Encoding.UTF8.GetBytes(
+                        "<html><head><link rel=\"stylesheet\" href=\"/res.css\"><script src=\"/res.js\"></script></head>"));
+                    response.OutputStream.Flush();
+                    System.Threading.Thread.Sleep(500);
+                    try
+                    {
+                        response.OutputStream.Write(Encoding.UTF8.GetBytes("<body><img src=\"/res.png\"><iframe src=\"/frame\"></iframe>real page</body></html>"));
+                        response.Close();
+                    }
+                    catch (HttpListenerException)
+                    {
+                        // The browser left already
+                    }
+                    return;
                 case "/gate-stuck":
                     body = "<html><body>xf_smogon_gate Checking your browser</body></html>";
                     break;
@@ -235,9 +253,26 @@ namespace TournamentParser.Tests
         [Test]
         public async Task RevalidatedPage_IsReturnedAsOk()
         {
-            Assert.That(await _client.GetStringAsync(_baseUrl + "cached"), Is.EqualTo(ForumPage));
-            Assert.That(await _client.GetStringAsync(_baseUrl + "cached"), Is.EqualTo(ForumPage));
+            // Blocking requests turns the browser's HTTP cache off.
+            using var client = new HttpClient(new PlaywrightHttpMessageHandler(new PlaywrightHttpOptions { LoadOnlyDocuments = false }));
+
+            Assert.That(await client.GetStringAsync(_baseUrl + "cached"), Is.EqualTo(ForumPage));
+            Assert.That(await client.GetStringAsync(_baseUrl + "cached"), Is.EqualTo(ForumPage));
             Assert.That(_requests, Is.EqualTo(new[] { "/cached", "/cached", "304" }), "the browser should have revalidated its copy");
+        }
+
+        [Test]
+        public async Task Page_IsLoadedWithoutWhatItNames()
+        {
+            Assert.That(await _client.GetStringAsync(_baseUrl + "with-resources"), Does.Contain("real page"));
+            await Task.Delay(500);
+            Assert.That(_requests, Is.EqualTo(new[] { "/with-resources" }));
+
+            // A browser without blocking starts loading them.
+            _requests.Clear();
+            using var client = new HttpClient(new PlaywrightHttpMessageHandler(new PlaywrightHttpOptions { LoadOnlyDocuments = false }));
+            await client.GetStringAsync(_baseUrl + "with-resources");
+            Assert.That(_requests, Has.Some.EqualTo("/res.css").Or.Some.EqualTo("/res.js"));
         }
 
         [TestCase("gate-delayed")]
@@ -276,11 +311,16 @@ namespace TournamentParser.Tests
         }
 
         [Test]
-        public async Task PoliteHandler_UsesTheBrowserByDefault()
+        public async Task PoliteHandler_PassesTheBotCheckInTheBrowser_ThenSendsItsCookieWithPlainRequests()
         {
             using var client = PoliteHttpMessageHandler.CreateClient(new PoliteHttpMessageHandler(new PoliteHttpOptions { MinDelay = TimeSpan.Zero }));
 
-            Assert.That(await client.GetStringAsync(_baseUrl + "page"), Is.EqualTo(ForumPage));
+            Assert.That(await client.GetStringAsync(_baseUrl + "gate-immediate"), Is.EqualTo(ForumPage));
+            Assert.That(_requests, Is.EqualTo(new[] { "/gate-immediate", "/gate-immediate", "/gate-immediate" }), "plain, then the browser twice");
+
+            _requests.Clear();
+            Assert.That(await client.GetStringAsync(_baseUrl + "gate-delayed"), Is.EqualTo(ForumPage));
+            Assert.That(_requests, Is.EqualTo(new[] { "/gate-delayed" }), "a plain request with the browser's cookie");
         }
 
         [Test]

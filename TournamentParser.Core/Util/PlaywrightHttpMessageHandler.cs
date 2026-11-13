@@ -1,6 +1,7 @@
-using Microsoft.Playwright;
+﻿using Microsoft.Playwright;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -28,6 +29,12 @@ namespace TournamentParser.Util
 
         /// <summary>How long a bot check may take before its page is returned as it is.</summary>
         public TimeSpan ChallengeTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Load only the page itself: no scripts, stylesheets, fonts, images, ads or frames. Inline scripts still run, which is
+        /// all Smogon's bot check needs. Blocking turns the browser's HTTP cache off.
+        /// </summary>
+        public bool LoadOnlyDocuments { get; set; } = true;
     }
 
     /// <summary>
@@ -35,7 +42,8 @@ namespace TournamentParser.Util
     /// shared browser context, so cookies work like in a normal browser, and bot checks that solve themselves with a
     /// script (Smogon's proof-of-work gate) are passed.
     /// The response carries the HTML exactly as the server sent it, not the DOM after scripts changed it. The tab is
-    /// closed as soon as that HTML is in, so only a bot check gets to run its script; images are never loaded.
+    /// closed as soon as that HTML is in, so only a bot check gets to run its script; nothing but the page itself is loaded
+    /// (<see cref="PlaywrightHttpOptions.LoadOnlyDocuments"/>).
     /// </summary>
     public sealed class PlaywrightHttpMessageHandler : HttpMessageHandler, IAsyncDisposable
     {
@@ -291,6 +299,11 @@ namespace TournamentParser.Util
                 }).ConfigureAwait(false);
                 // Attempt timeouts come from the CancellationToken (see PoliteHttpOptions.RequestTimeout).
                 context.SetDefaultNavigationTimeout(0);
+                if (_options.LoadOnlyDocuments)
+                {
+                    // Smogon's pages load ad scripts from several networks; a crawler has no business there.
+                    await context.RouteAsync("**/*", route => IsPage(route.Request) ? route.ContinueAsync() : route.AbortAsync()).ConfigureAwait(false);
+                }
                 _context = context;
                 return context;
             }
@@ -298,6 +311,32 @@ namespace TournamentParser.Util
             {
                 _startLock.Release();
             }
+        }
+
+        private static bool IsPage(IRequest request)
+        {
+            try
+            {
+                return request.ResourceType == "document" && request.Frame.ParentFrame == null;
+            }
+            catch (PlaywrightException)
+            {
+                // A request without frame (service worker)
+                return false;
+            }
+        }
+
+        /// <summary>The browser's cookies for <paramref name="url"/>, such as the one a bot check set.</summary>
+        public async Task<IReadOnlyList<System.Net.Cookie>> GetCookiesAsync(Uri url, CancellationToken cancellationToken = default)
+        {
+            var context = await StartAsync(cancellationToken).ConfigureAwait(false);
+            var cookies = await context.CookiesAsync([url.AbsoluteUri]).ConfigureAwait(false);
+            return cookies.Select(cookie => new System.Net.Cookie(cookie.Name, cookie.Value, cookie.Path, cookie.Domain)
+            {
+                Secure = cookie.Secure,
+                HttpOnly = cookie.HttpOnly,
+                Expires = cookie.Expires > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)cookie.Expires).UtcDateTime : DateTime.MinValue,
+            }).ToList();
         }
 
         public async ValueTask DisposeAsync()

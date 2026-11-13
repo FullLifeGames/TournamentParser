@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -72,6 +72,9 @@ namespace TournamentParser.Tests.TestSupport
         public static string ToDateTitle(DateTime utc) => utc.ToString("MMM d, yyyy 'at' h:mm tt", CultureInfo.GetCultureInfo("en-US"));
 
         private long _nextPostId = 1;
+
+        /// <summary>Posts younger than this are not in the search index yet.</summary>
+        public TimeSpan SearchIndexLag { get; set; } = TimeSpan.Zero;
 
         /// <summary>Requests to the search (all URLs below /forums/search/) answered so far.</summary>
         public int SearchRequests { get; private set; }
@@ -177,7 +180,7 @@ namespace TournamentParser.Tests.TestSupport
                     {
                         var date = DateTimeOffset.FromUnixTimeSeconds(ToTimestamp(post.DateTitle)).UtcDateTime;
                         // Posts dated after now are posted after the search ran.
-                        if (post.BodyLines.Any(line => line.Contains(ReplayMarker)) && date >= newer && date < older && date <= DateTime.UtcNow)
+                        if (post.BodyLines.Any(line => line.Contains(ReplayMarker)) && date >= newer && date < older && date <= DateTime.UtcNow - SearchIndexLag)
                         {
                             hits.Add((forum, thread, post, position, date));
                         }

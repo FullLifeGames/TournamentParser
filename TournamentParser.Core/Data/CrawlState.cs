@@ -1,4 +1,4 @@
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -51,9 +51,16 @@ namespace TournamentParser.Data
 
         /// <summary>
         /// Posts of this forum and its subforums up to this time (UTC) are covered: read, or known not to matter. Set once the
-        /// whole subtree is up to date; the next run's replay search starts a day before. Null until then.
+        /// whole subtree is up to date; the next run's replay search reaches back to it. Null until then.
         /// </summary>
         public DateTime? CoveredUntil { get; set; }
+
+        /// <summary>
+        /// Latest post (Unix seconds) of the unlocked threads in this forum (not its subforums) that can yield matches after
+        /// page 1, as of the last listing. While it is within <see cref="ThreadCollector.CollectorOptions.RecentActivityWindow"/>,
+        /// the forum is listed in every run, so that a lock or title change without a new post is noticed. Null means unknown.
+        /// </summary>
+        public long? OpenThreadsLatestPost { get; set; }
 
         /// <summary>Thread id to thread URL of every thread listed in this forum.</summary>
         public Dictionary<long, string> Threads { get; set; } = [];

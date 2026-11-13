@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
@@ -36,7 +36,8 @@ namespace TournamentParser.Util
     /// <summary>
     /// Sends at most one request per host at a time, waits <see cref="PoliteHttpOptions.MinDelay"/> between them,
     /// honours Retry-After, retries only transient failures and identifies itself with a User-Agent.
-    /// By default the requests go through a headless browser (<see cref="PlaywrightHttpMessageHandler"/>).
+    /// By default the requests go out as plain HTTP, and a bot check is passed in a headless browser, whose cookies are sent
+    /// along from then on (<see cref="BrowserCookieHttpMessageHandler"/>).
     /// </summary>
     public class PoliteHttpMessageHandler : DelegatingHandler
     {
@@ -68,10 +69,10 @@ namespace TournamentParser.Util
         public static HttpClient CreateClient(PoliteHttpMessageHandler handler) => new(handler) { Timeout = TimeSpan.FromMinutes(30) };
 
         /// <summary>
-        /// Requests go through a headless browser: Smogon's thread pages answer plain HTTP clients with a JavaScript bot check.
-        /// Pass <see cref="CreatePlainHttpHandler"/> as inner handler for plain HTTP requests.
+        /// Smogon's thread pages answer plain HTTP clients with a JavaScript bot check, which a headless browser passes.
+        /// Pass <see cref="CreatePlainHttpHandler"/> as inner handler for plain HTTP requests only.
         /// </summary>
-        private static HttpMessageHandler CreateDefaultInnerHandler() => new PlaywrightHttpMessageHandler();
+        private static HttpMessageHandler CreateDefaultInnerHandler() => new BrowserCookieHttpMessageHandler();
 
         /// <summary>A handler for plain HTTP requests, without browser.</summary>
         public static SocketsHttpHandler CreatePlainHttpHandler() => new()

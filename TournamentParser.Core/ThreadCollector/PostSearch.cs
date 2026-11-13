@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -67,14 +67,15 @@ namespace TournamentParser.ThreadCollector
             + (filter.NodeIds.Count > 0 ? "&c[child_nodes]=1" : "");
 
         /// <summary>
-        /// All replay posts in the forums <paramref name="nodeIds"/> and their subforums from <paramref name="since"/> on.
+        /// All replay posts in the forums <paramref name="nodeIds"/> and their subforums from <paramref name="since"/> on (a
+        /// day), or at least those from <paramref name="knownBefore"/> on: result pages are read until they reach that time.
         /// Null if guests cannot search.
         /// </summary>
-        public async Task<SearchResult?> SearchForumsAsync(IReadOnlyList<long> nodeIds, DateTime? since)
+        public async Task<SearchResult?> SearchForumsAsync(IReadOnlyList<long> nodeIds, DateTime? since, DateTime? knownBefore = null)
         {
             var hits = new Dictionary<(long ThreadId, long? PostId), SearchHit>();
             var uncovered = new HashSet<long>();
-            if (!await SearchRangeAsync(Filter.Forums(nodeIds), since, null, hits, uncovered).ConfigureAwait(false))
+            if (!await SearchRangeAsync(Filter.Forums(nodeIds), since, null, hits, uncovered, knownBefore).ConfigureAwait(false))
             {
                 return null;
             }
@@ -142,36 +143,38 @@ namespace TournamentParser.ThreadCollector
         /// Pages through the results by date. A day with more results than a search shows is split by forum; a single forum
         /// with such a day is <paramref name="uncovered"/>. False if guests cannot search.
         /// </summary>
-        private async Task<bool> SearchRangeAsync(Filter filter, DateTime? since, DateTime? before, Dictionary<(long, long?), SearchHit> hits, HashSet<long> uncovered)
+        private async Task<bool> SearchRangeAsync(Filter filter, DateTime? since, DateTime? before, Dictionary<(long, long?), SearchHit> hits, HashSet<long> uncovered,
+            DateTime? knownBefore = null)
         {
             var html = await GetResultPageAsync(Url(ReplayQuery, filter, since, before)).ConfigureAwait(false);
             if (html == null)
             {
                 return false;
             }
-            var (found, cutOff) = await ReadResultPagesAsync(html, 1).ConfigureAwait(false);
+            var (found, cutOff) = await ReadResultPagesAsync(html, 1, knownBefore).ConfigureAwait(false);
             if (found == null)
             {
                 return false;
             }
             AddHits(hits, found);
-            return !cutOff || await SearchOlderAsync(filter, since, found, hits, uncovered, before).ConfigureAwait(false);
+            return !cutOff || await SearchOlderAsync(filter, since, found, hits, uncovered, before, knownBefore).ConfigureAwait(false);
         }
 
         /// <summary>A search was cut off: searches again for the days up to its oldest result (results come newest first).</summary>
-        private async Task<bool> SearchOlderAsync(Filter filter, DateTime? since, List<SearchHit> found, Dictionary<(long, long?), SearchHit> hits, HashSet<long> uncovered, DateTime? before = null)
+        private async Task<bool> SearchOlderAsync(Filter filter, DateTime? since, List<SearchHit> found, Dictionary<(long, long?), SearchHit> hits, HashSet<long> uncovered,
+            DateTime? before = null, DateTime? knownBefore = null)
         {
             var oldestDay = found.Count > 0 ? found.Min(hit => hit.PostDate).Date.AddDays(1) : (DateTime?)null;
             if (oldestDay != null && (before == null || oldestDay < before))
             {
                 Console.WriteLine($"  {hits.Count} replay post(s) so far, searching before {oldestDay:yyyy-MM-dd}");
-                return await SearchRangeAsync(filter, since, oldestDay, hits, uncovered).ConfigureAwait(false);
+                return await SearchRangeAsync(filter, since, oldestDay, hits, uncovered, knownBefore).ConfigureAwait(false);
             }
             if (filter.NodeIds.Count > 1)
             {
                 var half = filter.NodeIds.Count / 2;
-                return await SearchRangeAsync(Filter.Forums(filter.NodeIds.Take(half).ToList()), since, before, hits, uncovered).ConfigureAwait(false)
-                    && await SearchRangeAsync(Filter.Forums(filter.NodeIds.Skip(half).ToList()), since, before, hits, uncovered).ConfigureAwait(false);
+                return await SearchRangeAsync(Filter.Forums(filter.NodeIds.Take(half).ToList()), since, before, hits, uncovered, knownBefore).ConfigureAwait(false)
+                    && await SearchRangeAsync(Filter.Forums(filter.NodeIds.Skip(half).ToList()), since, before, hits, uncovered, knownBefore).ConfigureAwait(false);
             }
             var what = filter.ThreadId is long threadId ? "Thread " + threadId : "Forum " + filter.NodeIds[0];
             Console.WriteLine($"{what} has more than {MaxResultPages * 10} replay posts on a single day; its pages are read instead.");
@@ -179,12 +182,16 @@ namespace TournamentParser.ThreadCollector
             return true;
         }
 
-        /// <summary>The hits of a search, starting with its first result page; whether the search was cut off.</summary>
-        private async Task<(List<SearchHit>? Hits, bool CutOff)> ReadResultPagesAsync(string firstPage, int pagesRead)
+        /// <summary>
+        /// The hits of a search, starting with its first result page, up to the first page that reaches back before
+        /// <paramref name="knownBefore"/>; whether the search was cut off before that.
+        /// </summary>
+        private async Task<(List<SearchHit>? Hits, bool CutOff)> ReadResultPagesAsync(string firstPage, int pagesRead, DateTime? knownBefore = null)
         {
             var hits = new List<SearchHit>(SearchResultParser.Parse(firstPage, out var url));
             var pages = pagesRead;
-            while (url != null && pages < MaxResultPages)
+            bool Reached() => knownBefore != null && hits.Count > 0 && hits.Min(hit => hit.PostDate) < knownBefore;
+            while (url != null && pages < MaxResultPages && !Reached())
             {
                 var html = await GetResultPageAsync(url).ConfigureAwait(false);
                 if (html == null)
@@ -194,7 +201,7 @@ namespace TournamentParser.ThreadCollector
                 pages++;
                 hits.AddRange(SearchResultParser.Parse(html, out url));
             }
-            return (hits, pages >= MaxResultPages);
+            return (hits, pages >= MaxResultPages && !Reached());
         }
 
         [GeneratedRegex(@"must wait at least (\d+) seconds")]

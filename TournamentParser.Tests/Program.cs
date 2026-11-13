@@ -30,22 +30,33 @@ namespace TournamentParser.Tests
             Assert.That(nonTourThreads.Count > 0);
         }
 
-        /// <summary>Search and thread page go through the default handler: the browser, which passes Smogon's bot check.</summary>
+        /// <summary>
+        /// The search with plain requests; the first thread page passes Smogon's bot check in the browser, the second one is a
+        /// plain request with the browser's cookie.
+        /// </summary>
         [Test]
-        public async Task Search_FindsRecentReplayPosts_AndTheBrowserReadsTheirPage()
+        public async Task Search_FindsRecentReplayPosts_AndTheirPagesPassTheBotCheck()
         {
-            using var client = PoliteHttpMessageHandler.CreateClient(new PoliteHttpMessageHandler());
+            var cookieHandler = new BrowserCookieHttpMessageHandler();
+            var politeHandler = new PoliteHttpMessageHandler(new PoliteHttpOptions(), cookieHandler);
+            using var client = PoliteHttpMessageHandler.CreateClient(politeHandler);
             var search = new PostSearch(url => client.GetStringAsync(url));
 
             var result = await search.SearchForumsAsync([34], DateTime.UtcNow.Date.AddDays(-1));
 
             Assert.That(result, Is.Not.Null, "guests can search");
-            Assert.That(result!.Hits, Is.Not.Empty);
-            var hit = result.Hits.First(hit => hit.PostId != null);
-            var pageUrl = SmogonPages.PageUrl(hit.ThreadUrl, hit.Page);
-            var page = await client.GetStringAsync(pageUrl);
-            SmogonPages.EnsureThreadPage(page, pageUrl);
-            Assert.That(page, Does.Contain($"data-content=\"post-{hit.PostId}\""), "the position gives the page of the post");
+            Assert.That(cookieHandler.BrowserRequests, Is.Zero, "the search has no bot check");
+            var hits = result!.Hits.Where(hit => hit.PostId != null).GroupBy(hit => hit.ThreadId).Select(group => group.First()).Take(2).ToList();
+            Assert.That(hits, Has.Count.EqualTo(2));
+            foreach (var hit in hits)
+            {
+                var pageUrl = SmogonPages.PageUrl(hit.ThreadUrl, hit.Page);
+                var page = await client.GetStringAsync(pageUrl);
+                SmogonPages.EnsureThreadPage(page, pageUrl);
+                Assert.That(page, Does.Contain($"data-content=\"post-{hit.PostId}\""), "the position gives the page of the post");
+            }
+            Assert.That(cookieHandler.BrowserRequests, Is.EqualTo(1), "only the first thread page needs the browser");
+            Console.WriteLine(politeHandler.Statistics);
         }
 
         [Test]

@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
@@ -124,6 +124,25 @@ namespace TournamentParser.Tests
                 PostSearch.Url(PostSearch.ReplayQuery, PostSearch.Filter.Forums([34]), new DateTime(2026, 9, 30), new DateTime(2026, 10, 3)),
             }));
             Assert.That(requests, Has.Count.EqualTo(20 + 12));
+        }
+
+        [Test]
+        public void ResultPages_AreReadBackToTheLastRunOnly()
+        {
+            var fake = ForumWithReplayPosts(("/forums/forums/tournaments.34/", [30, 30, 30]));
+            var requests = new List<string>();
+            var search = new PostSearch(url =>
+            {
+                requests.Add(url);
+                return Task.FromResult(fake.SearchPage(url));
+            });
+
+            // 30 posts a day, one per minute from midnight on; the last run covered Oct 3 up to 00:20.
+            var result = search.SearchForumsAsync([34], new DateTime(2026, 10, 2), new DateTime(2026, 10, 3, 0, 20, 0)).Result!;
+
+            Assert.That(requests, Has.Count.EqualTo(2), "the second page reaches back before 00:20; without the limit, 6 pages");
+            Assert.That(result.Hits.Min(hit => hit.PostDate), Is.LessThan(new DateTime(2026, 10, 3, 0, 20, 0)));
+            Assert.That(result.Hits.Where(hit => hit.PostDate >= new DateTime(2026, 10, 3, 0, 20, 0)).Count(), Is.EqualTo(10));
         }
 
         [Test]
