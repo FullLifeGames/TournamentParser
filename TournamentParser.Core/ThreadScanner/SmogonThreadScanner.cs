@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Caching.Distributed;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -9,18 +8,28 @@ using System.Text;
 using System.Threading.Tasks;
 using TournamentParser.Core.Data;
 using TournamentParser.Data;
+using TournamentParser.ThreadCollector;
 using TournamentParser.Util;
 
 namespace TournamentParser.ThreadScanner
 {
     public class SmogonThreadScanner : IThreadScanner
     {
-        public SmogonThreadScanner() : this(null) { }
+        /// <summary>Smogon shows 25 posts per thread page.</summary>
+        private const int PostsPerPage = 25;
 
-        private readonly IDistributedCache? _cache;
-        public SmogonThreadScanner(IDistributedCache? cache)
+        public SmogonThreadScanner() : this((IDistributedCache?)null) { }
+
+        /// <param name="cache">
+        /// Crawl state written by <see cref="ThreadCollector.SmogonThreadCollector"/> with the same cache. <see cref="ScanThreads"/>
+        /// parses the stored pages of a thread instead of requesting them.
+        /// </param>
+        public SmogonThreadScanner(IDistributedCache? cache) : this(cache == null ? null : new CrawlStateStore(cache)) { }
+
+        private readonly CrawlStateStore? _store;
+        internal SmogonThreadScanner(CrawlStateStore? store)
         {
-            _cache = cache;
+            _store = store;
         }
 
         public ConcurrentBag<User> Users { get; } = [];
@@ -33,116 +42,95 @@ namespace TournamentParser.ThreadScanner
         private const string ShowdownReplayString = "replay.pokemonshowdown.com/";
 
         /// <summary>
-        /// Companion cache key storing only the thread's last post date, so staleness can be
-        /// decided without loading the full page-content entry.
+        /// Parses the given threads. Threads with pages in the crawl state are parsed from there without any request;
+        /// other threads are read from Smogon (all pages, nothing is stored).
         /// </summary>
-        public const string LastPostCacheKeySuffix = "#lastPost";
-
         public async Task ScanThreads(IDictionary<string, List<string>> threadsForForums)
         {
+            var urls = threadsForForums.SelectMany(thread => thread.Value).Distinct().ToList();
+            var fromState = 0;
             await Parallel.ForEachAsync(
-                threadsForForums.SelectMany(thread => thread.Value),
+                urls,
                 Common.ParallelOptions,
                 async (url, ct) =>
                 {
-                    Console.WriteLine("Currently Scanning: " + url);
-                    var previousUsers = Users.Count;
-                    var cachedResult = await GetReusableCachedResult(url, ct).ConfigureAwait(false);
-                    if (cachedResult is not null)
+                    var storedPages = _store?.LoadPages(url);
+                    try
                     {
-                        await AnalyzeTopic(url, cachedResult.CollectedLinks, ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        var analyzeResult = await AnalyzeTopic(url, ct).ConfigureAwait(false);
-                        if (analyzeResult is not null && _cache is not null)
+                        if (storedPages != null)
                         {
-                            // Write immediately so the collected page content of each thread can
-                            // be garbage collected instead of accumulating for the whole scan.
-                            await _cache.SetStringAsync(url, JsonConvert.SerializeObject(analyzeResult), ct).ConfigureAwait(false);
-                            await _cache.SetStringAsync(
-                                url + LastPostCacheKeySuffix,
-                                analyzeResult.LastPost.ToString("O", CultureInfo.InvariantCulture),
-                                ct).ConfigureAwait(false);
+                            await AnalyzeTopic(url, storedPages, ct).ConfigureAwait(false);
+                            System.Threading.Interlocked.Increment(ref fromState);
+                        }
+                        else
+                        {
+                            Console.WriteLine("Reading " + url);
+                            await AnalyzeTopic(url, ct).ConfigureAwait(false);
                         }
                     }
-                    var nowUsers = Users.Count;
-                    Console.WriteLine("Added " + (nowUsers - previousUsers) + " Users on " + url);
-                    Console.WriteLine();
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        // One thread the parser trips over must not cost the output of all others.
+                        Console.WriteLine("Exception at: " + url);
+                        Console.WriteLine(e.Message);
+                    }
                 }
             ).ConfigureAwait(false);
+            Console.WriteLine($"Parsed {urls.Count} thread(s), {fromState} from the crawl state; {Users.Count} users known");
         }
 
         /// <summary>
-        /// Returns the cached analyze result when it is still usable (last post older than six
-        /// months, so no new relevant matches are expected), otherwise null.
+        /// The lines of a thread page that parsing needs, joined by '\n': the lines this scanner keeps while it parses the page
+        /// (post bodies and the markers around them). Parsing these lines gives the same result as parsing the whole page,
+        /// so the crawl state stores them instead of the page.
         /// </summary>
-        private async Task<TopicAnalyzeResult?> GetReusableCachedResult(string fullUrl, System.Threading.CancellationToken ct)
+        internal static string ExtractImportantLines(string url, int page, string html) => ExtractImportantLines(url, page, html, out _);
+
+        /// <param name="hasPairings">Whether the page holds pairings that later replay posts can belong to; see <see cref="HasPairings"/>.</param>
+        internal static string ExtractImportantLines(string url, int page, string html, out bool hasPairings)
         {
-            if (_cache == null)
+            // Which lines are kept depends only on the page itself, so a throwaway scanner gives the same lines as the real one.
+            var scanner = new SmogonThreadScanner();
+            var lineDataHandler = new LineDataHandler()
             {
-                return null;
-            }
-
-            var sixMonthsAgo = DateTime.Now.AddMonths(-6);
-
-            // Threads with recent activity get re-scanned; the lightweight meta entry lets us
-            // skip loading their full page-content entry entirely.
-            var metaString = await GetCachedStringSafe(fullUrl + LastPostCacheKeySuffix, ct).ConfigureAwait(false);
-            if (metaString is not null
-                && DateTime.TryParseExact(metaString, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var lastPost)
-                && lastPost >= sixMonthsAgo)
+                PostNumber = (page - 1) * PostsPerPage
+            };
+            var thread = new Thread() { Id = GetThreadId(url) };
+            var currentlyUserToMatch = new Dictionary<string, List<TournamentMatch>>();
+            foreach (var line in Common.EnumerateLines(html))
             {
-                return null;
+                scanner.HandleLine(url, line, thread, currentlyUserToMatch, lineDataHandler);
             }
-
-            var cachedResults = await GetCachedStringSafe(fullUrl, ct).ConfigureAwait(false);
-            if (cachedResults == null)
-            {
-                return null;
-            }
-
-            var analyzeResult = JsonConvert.DeserializeObject<TopicAnalyzeResult>(cachedResults);
-            if (analyzeResult == null)
-            {
-                return null;
-            }
-
-            // If the last post is older than six months, assumption is that no new activity with relevant matches will be posted
-            return analyzeResult.LastPost < sixMonthsAgo ? analyzeResult : null;
+            hasPairings = currentlyUserToMatch.Count > 0;
+            return string.Join('\n', lineDataHandler.FullImportantSiteBits);
         }
 
-        private async Task<string?> GetCachedStringSafe(string key, System.Threading.CancellationToken ct)
+        /// <summary>
+        /// Whether page 1 of a thread (the whole page, or its stored lines) holds pairings in posts 1 or 2. A replay post on a later
+        /// page only becomes a match if its author is paired in the thread (<see cref="DetermineIfPostAboutMatch"/>), and pairings
+        /// are only taken from posts 1 and 2 (<see cref="IsReplayCollectionPost"/>). So a thread without them yields matches from
+        /// page 1 alone, unless its URL marks it as a replay thread (<see cref="IsReplayThread"/>).
+        /// </summary>
+        internal static bool HasPairings(string url, string firstPage)
         {
-            try
-            {
-                return await _cache!.GetStringAsync(key, ct).ConfigureAwait(false);
-            }
-            catch (NullReferenceException)
-            {
-                return null;
-            }
+            ExtractImportantLines(url, 1, firstPage, out var hasPairings);
+            return hasPairings;
         }
 
-        private static int GetNumberOfPages(string site)
-        {
-            var pages = 1;
-            if (site.Contains("<nav class=\"pageNavWrapper"))
-            {
-                var temp = site;
-                while (temp.Contains("pageNav-page"))
-                {
-                    temp = temp[(temp.IndexOf("pageNav-page") + "pageNav-page".Length)..];
-                }
-                temp = temp[(temp.IndexOf(">") + 1)..];
-                temp = temp[(temp.IndexOf(">") + 1)..];
-                temp = temp[..temp.IndexOf("<")];
-                pages = int.Parse(temp);
-            }
+        /// <summary>In a replay thread every post is read for pairings, not only posts 1 and 2.</summary>
+        internal static bool IsReplayThread(string url) => url.Contains("-replay");
 
-            return pages;
+        private static string GetThreadId(string url)
+        {
+            var id = url[(url.LastIndexOf(".") + 1)..];
+            if (id.Contains('/'))
+            {
+                id = id[..id.IndexOf("/")];
+            }
+            return id;
         }
 
+        /// <summary>Reads all pages of a thread from Smogon and parses them; nothing is stored.</summary>
         public async Task<TopicAnalyzeResult?> AnalyzeTopic(string url, System.Threading.CancellationToken ct)
         {
             var pages = 1;
@@ -151,59 +139,32 @@ namespace TournamentParser.ThreadScanner
             try
             {
                 var currentlyUserToMatch = new Dictionary<string, List<TournamentMatch>>();
-                var thread = new Thread();
-                var id = url[(url.LastIndexOf(".") + 1)..];
-                if (id.Contains('/'))
+                var thread = new Thread
                 {
-                    id = id[..id.IndexOf("/")];
-                }
-                thread.Id = id;
+                    Id = GetThreadId(url)
+                };
 
-                void ProcessPage(int pageCount, string site)
+                // Sequential on purpose: all pages live on one host, and parsing carries state across pages.
+                for (var pageCount = 1; pageCount <= pages; pageCount++)
                 {
+                    var pageUrl = SmogonPages.PageUrl(url, pageCount);
+                    var site = await Common.HttpClient.GetStringAsync(pageUrl, ct).ConfigureAwait(false);
+                    SmogonPages.EnsureThreadPage(site, pageUrl);
+                    if (pageCount == 1)
+                    {
+                        pages = SmogonPages.GetNumberOfPages(site);
+                    }
+
                     var lineDataHandler = new LineDataHandler()
                     {
-                        PostNumber = (pageCount - 1) * 25
+                        PostNumber = (pageCount - 1) * PostsPerPage
                     };
-
                     foreach (var line in Common.EnumerateLines(site))
                     {
                         HandleLine(url, line, thread, currentlyUserToMatch, lineDataHandler);
                     }
                     latestPost = lineDataHandler.PostDate;
                     collectedLinks.Add(string.Join('\n', lineDataHandler.FullImportantSiteBits));
-                }
-
-                var firstPage = await Common.HttpClient.GetStringAsync(url + "page-1", ct).ConfigureAwait(false);
-                pages = GetNumberOfPages(firstPage);
-                ProcessPage(1, firstPage);
-                firstPage = null!;
-
-                // Fetching is network-bound and page-independent, so it runs concurrently, but
-                // in bounded batches so only a handful of raw pages are held in memory at once;
-                // processing stays sequential because parsing carries state across pages.
-                var batchSize = Common.ParallelOptions.MaxDegreeOfParallelism > 0
-                    ? Common.ParallelOptions.MaxDegreeOfParallelism
-                    : Environment.ProcessorCount;
-                var parallelOptions = new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = Common.ParallelOptions.MaxDegreeOfParallelism,
-                    CancellationToken = ct,
-                };
-                for (var batchStart = 2; batchStart <= pages; batchStart += batchSize)
-                {
-                    var batchCount = Math.Min(batchSize, pages - batchStart + 1);
-                    var sites = new string[batchCount];
-                    await Parallel.ForEachAsync(Enumerable.Range(batchStart, batchCount), parallelOptions, async (pageCount, innerCt) =>
-                    {
-                        sites[pageCount - batchStart] = await Common.HttpClient.GetStringAsync(url + "page-" + pageCount, innerCt).ConfigureAwait(false);
-                    }).ConfigureAwait(false);
-
-                    for (var pageCount = batchStart; pageCount < batchStart + batchCount; pageCount++)
-                    {
-                        ProcessPage(pageCount, sites[pageCount - batchStart]);
-                        sites[pageCount - batchStart] = null!;
-                    }
                 }
             }
             catch (Exception e)
@@ -226,20 +187,17 @@ namespace TournamentParser.ThreadScanner
             return Task.Run(() =>
             {
                 var currentlyUserToMatch = new Dictionary<string, List<TournamentMatch>>();
-                var thread = new Thread();
-                var id = url[(url.LastIndexOf(".") + 1)..];
-                if (id.Contains('/'))
+                var thread = new Thread
                 {
-                    id = id[..id.IndexOf("/")];
-                }
-                thread.Id = id;
+                    Id = GetThreadId(url)
+                };
                 for (var pageCount = 0; pageCount < collectedLinks.Count; pageCount++)
                 {
                     var site = collectedLinks[pageCount];
 
                     var lineDataHandler = new LineDataHandler()
                     {
-                        PostNumber = pageCount * 25
+                        PostNumber = pageCount * PostsPerPage
                     };
 
                     foreach (var line in Common.EnumerateLines(site))
@@ -262,8 +220,13 @@ namespace TournamentParser.ThreadScanner
             }
             else if (line.Contains("<h1 class=\"p-title-value\">"))
             {
-                thread.Name = line[..line.LastIndexOf("<")];
-                thread.Name = thread.Name[(thread.Name.LastIndexOf(">") + 1)..];
+                // Stored pages are read at different times. The first page is read again whenever the title changes,
+                // so its title is the current one.
+                if (thread.Name == null)
+                {
+                    thread.Name = line[..line.LastIndexOf("<")];
+                    thread.Name = thread.Name[(thread.Name.LastIndexOf(">") + 1)..];
+                }
             }
             else if (line.Contains("<article class=\"message-body js-selectToQuote\">"))
             {
@@ -361,7 +324,7 @@ namespace TournamentParser.ThreadScanner
 
         private static bool IsReplayCollectionPost(string url, LineDataHandler lineDataHandler)
         {
-            return lineDataHandler.PostNumber == 1 || lineDataHandler.PostNumber == 2 || url.Contains("-replay");
+            return lineDataHandler.PostNumber == 1 || lineDataHandler.PostNumber == 2 || IsReplayThread(url);
         }
 
         private TournamentMatch DetermineMatch(string line, string strippedLine, Thread thread, Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, LineDataHandler lineDataHandler)

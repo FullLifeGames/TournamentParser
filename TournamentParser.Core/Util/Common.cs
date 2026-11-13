@@ -1,30 +1,30 @@
 ﻿using System.Collections.Generic;
-using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using TournamentParser.Core.Util;
 
 namespace TournamentParser.Util
 {
     public static class Common
     {
-        public static HttpClientHandler CreateHttpClientHandler() => new()
-        {
-            // Forum HTML compresses roughly 5-10x; without this every page is fetched uncompressed.
-            AutomaticDecompression = DecompressionMethods.All,
-        };
+        public const string UserAgent = "TournamentParser/3.0 (+https://github.com/FullLifeGames/TournamentParser)";
 
         private static HttpClient? _httpClient;
+
+        /// <summary>
+        /// Client for all requests to Smogon. Defaults to a <see cref="PoliteHttpMessageHandler"/> client:
+        /// one request per host at a time with a pause in between.
+        /// </summary>
         public static HttpClient HttpClient
         {
             get
             {
-                return _httpClient ??= new HttpClient(new HttpRetryMessageHandler(CreateHttpClientHandler()));
+                return _httpClient ??= PoliteHttpMessageHandler.CreateClient(new PoliteHttpMessageHandler());
             }
             set => _httpClient = value;
         }
 
+        /// <summary>Parallelism of parsing the stored threads; requests do not run in parallel.</summary>
         public static ParallelOptions ParallelOptions { get; set; } = new();
 
         public const string SmogonBaseUrl = "https://www.smogon.com";
