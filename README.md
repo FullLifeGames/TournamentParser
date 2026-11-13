@@ -13,7 +13,7 @@ Visit: <https://fulllifegames.com/Tools/MatchChecker/?user=fulllifegames>
 Compile and use the command line application of the `TournamentParser.Cmd` project.
 
 ```
-TournamentParser.Cmd [--full] [--delay <seconds>] [--recent-days <days>] [--max-requests <count>]
+TournamentParser.Cmd [--full] [--no-search] [--delay <seconds>] [--recent-days <days>] [--max-requests <count>] [--headed]
 ```
 
 It scans the forums Tournaments, PS! Tournaments, Smogon Metagames, Ruins of Alph and Battle Stadium Singles, each with its subforums, and writes `output.txt`, `output.json` and `users/*.json`.
@@ -21,7 +21,9 @@ It scans the forums Tournaments, PS! Tournaments, Smogon Metagames, Ruins of Alp
 The crawl state is kept in `SmogonTournamentParser.db` in the working directory. Keep that file between runs:
 
 - The first run reads every listing page and every thread. A `SmogonTournamentParser.db` from version 2.x is taken over without changing its entries: threads whose stored pages still cover the latest post are not read again, and pages that hold no content (2.x also stored bot checks) are read again. Back the file up before the first run of version 3.
-- Later runs only read what changed. A forum whose latest post is the same as in the last run is not requested, nor are its subforums. A forum listing is read up to the first thread without new posts. Of a thread with a new post, a lock or a new title, page 1 (the tournament post with the pairings) and the pages from the last known page on are read.
+- Later runs only read what changed. A forum whose latest post is the same as in the last run is not requested, nor are its subforums. A forum listing is read up to the first thread without new posts.
+- Only threads with pairings in posts 1 or 2, and replay threads (`-replay` in the URL), can yield matches after page 1: a replay post only counts if its author is paired in the thread. Of all other threads only page 1 is read. Posters without matches in those threads no longer show up in the output; the matches stay the same.
+- Each run first asks Smogon's search for the posts with replay links (`replay.pokemonshowdown.com`) in the changed forums since the last run. Of a tournament thread with new posts, page 1 (the tournament post) and the new pages with replay posts are read. Page 1 of a thread without pairings is read again only when the search finds a replay post in it (the host may have added pairings), or when its title or lock changes. A tournament thread with more than five pages to read that the search of the run does not cover (a new thread, for example) first searches for its own replay posts, unless they are spread over so many pages that reading them is cheaper. `--no-search` turns the search off: then the pages from the last known page on are read.
 - Forums and threads with posts younger than `--recent-days` (default 7) are looked at in every run, so that locks and title changes ("won by ...") are noticed even without a new post. Edits of older posts without any of these signals keep the state of their last read; `--full` reads everything again.
 - `--max-requests` spreads a long first run over several runs: the run stops after that many requests, and the next one continues from there.
 
@@ -29,11 +31,13 @@ The output is always built from all stored threads, so it stays complete when a 
 
 Requests go out one at a time with a pause of `--delay` seconds (default 2). The parser identifies itself with the User-Agent `TournamentParser/3.0 (+https://github.com/FullLifeGames/TournamentParser)`, waits as long as `Retry-After` asks and does not retry 404s. At the end it prints how many requests it sent.
 
+Pages are loaded with a headless Chromium through [Playwright](https://playwright.dev/dotnet/), so cookies and scripts work like in a browser and a bot check that solves itself is passed. The parser reads the HTML as the server sent it; images are not loaded. Chromium is downloaded on the first run (to `%LOCALAPPDATA%\ms-playwright` or `~/.cache/ms-playwright`). On Linux, the system libraries Chromium needs are installed once with `pwsh bin/<config>/net8.0/playwright.ps1 install-deps chromium` (or see [the Playwright docs](https://playwright.dev/dotnet/docs/browsers#install-system-dependencies)). `--headed` shows the browser window.
+
 If Smogon answers with a bot check or an unexpected page, the run stops with exit code 2; a reached `--max-requests` stops it with exit code 3. In both cases the output files are left as they were; threads read before the stop are kept and the next run continues from there.
 
 ### Tests
 
-`dotnet test` runs offline against generated forum pages and saved Smogon pages. The tests that send requests to smogon.com are explicit; run them on purpose with `dotnet test --filter TestCategory=Live`.
+`dotnet test` runs offline against generated forum pages and saved Smogon pages. The tests that send requests to smogon.com are explicit; run them on purpose with `dotnet test --filter TestCategory=Live`. The tests of the browser handler run Chromium against a local server: `dotnet test --filter TestCategory=Browser`.
 
 ## Package
 

@@ -6,28 +6,41 @@ using TournamentParser.ThreadCollector;
 using TournamentParser.Util;
 
 const string Usage = """
-    Usage: TournamentParser.Cmd [--full] [--delay <seconds>] [--recent-days <days>] [--max-requests <count>]
+    Usage: TournamentParser.Cmd [--full] [--no-search] [--delay <seconds>] [--recent-days <days>]
+                                [--max-requests <count>] [--headed]
 
       --full                  Ignore the stored state and read every listing and thread page again.
+      --no-search             Do not ask Smogon's search which new posts hold replays; read the new
+                              pages of every changed tournament thread instead.
       --delay <seconds>       Pause between two requests to Smogon (default 2).
       --recent-days <days>    Forums and threads with posts younger than this are checked in every run
                               for locks and title changes (default 7, 0 turns it off).
       --max-requests <count>  Stop after this many requests; the next run continues from there
                               (default 0, no limit).
+      --headed                Show the browser window the pages are loaded in.
 
-    The crawl state is kept in SmogonTournamentParser.db. After the first run, only new activity is read.
+    The crawl state is kept in SmogonTournamentParser.db. After the first run, only new activity is read:
+    page 1 of changed threads, and of tournament threads the new pages with replay posts.
+    Pages are loaded with Chromium (Playwright), which is downloaded on the first run.
     Exit codes: 0 done, 1 error, 2 bot check or unexpected page, 3 request limit reached, 64 usage.
     Output files are written only after a complete run.
     """;
 
 var collectorOptions = new CollectorOptions();
 var httpOptions = new PoliteHttpOptions();
+var browserOptions = new PlaywrightHttpOptions();
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
     {
         case "--full":
             collectorOptions.FullRefresh = true;
+            break;
+        case "--no-search":
+            collectorOptions.UseSearch = false;
+            break;
+        case "--headed":
+            browserOptions.Headless = false;
             break;
         case "--delay" when i + 1 < args.Length && double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) && seconds >= 0:
             httpOptions.MinDelay = TimeSpan.FromSeconds(seconds);
@@ -48,13 +61,17 @@ for (var i = 0; i < args.Length; i++)
     }
 }
 
-var httpHandler = new PoliteHttpMessageHandler(httpOptions);
+var browser = new PlaywrightHttpMessageHandler(browserOptions);
+var httpHandler = new PoliteHttpMessageHandler(httpOptions, browser);
 Common.HttpClient = PoliteHttpMessageHandler.CreateClient(httpHandler);
 
 SQLitePCL.Batteries_V2.Init();
 
 try
 {
+    Console.WriteLine("Starting browser...");
+    await browser.StartAsync().ConfigureAwait(false);
+
     var tournament = new SmogonParser(
         new SqliteCache(
             new SqliteCacheOptions()
@@ -115,4 +132,6 @@ catch (Exception e)
 finally
 {
     Console.WriteLine(httpHandler.Statistics);
+    // Closes the browser
+    Common.HttpClient.Dispose();
 }

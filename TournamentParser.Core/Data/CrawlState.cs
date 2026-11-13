@@ -49,6 +49,12 @@ namespace TournamentParser.Data
 
         public DateTime LastCrawl { get; set; }
 
+        /// <summary>
+        /// Posts of this forum and its subforums up to this time (UTC) are covered: read, or known not to matter. Set once the
+        /// whole subtree is up to date; the next run's replay search starts a day before. Null until then.
+        /// </summary>
+        public DateTime? CoveredUntil { get; set; }
+
         /// <summary>Thread id to thread URL of every thread listed in this forum.</summary>
         public Dictionary<long, string> Threads { get; set; } = [];
 
@@ -90,10 +96,25 @@ namespace TournamentParser.Data
         /// <summary>Pages taken from the 2.x entry because they hold real thread content there.</summary>
         public SortedSet<int> LegacyPages { get; set; } = [];
 
-        /// <summary>Pages that are neither stored nor usable from the 2.x entry; the next update reads them.</summary>
+        /// <summary>
+        /// Whether posts 1 and 2 held pairings when page 1 was last read; null means unknown. Without them (and outside replay
+        /// threads), no page after the first can yield a match, so only page 1 is read.
+        /// </summary>
+        public bool? HasPairings { get; set; }
+
+        /// <summary>Pages that Smogon's search showed without replay posts, so they were not read.</summary>
+        public SortedSet<int> SkippedPages { get; set; } = [];
+
+        /// <summary>Whether pages after the first can yield matches; true while unknown.</summary>
+        public bool NeedsPagesAfterFirst(string url) => HasPairings != false || ThreadScanner.SmogonThreadScanner.IsReplayThread(url);
+
+        /// <summary>
+        /// Pages that are needed but neither stored, nor usable from the 2.x entry, nor known to hold no replay posts;
+        /// the next update reads them.
+        /// </summary>
         [JsonIgnore]
-        public IEnumerable<int> MissingPages => Enumerable.Range(1, NumberOfPages)
-            .Where(page => !StoredPages.Contains(page) && !LegacyPages.Contains(page));
+        public IEnumerable<int> MissingPages => Enumerable.Range(1, NeedsPagesAfterFirst(Url) ? NumberOfPages : Math.Min(1, NumberOfPages))
+            .Where(page => !StoredPages.Contains(page) && !LegacyPages.Contains(page) && !SkippedPages.Contains(page));
 
         [JsonIgnore]
         public bool HasContent => NumberOfPages > 0 && (StoredPages.Count > 0 || LegacyPages.Count > 0);

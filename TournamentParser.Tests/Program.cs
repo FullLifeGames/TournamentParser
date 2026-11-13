@@ -1,8 +1,12 @@
 ﻿using NeoSmart.Caching.Sqlite;
 using NUnit.Framework;
+using System;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using TournamentParser.Parser;
+using TournamentParser.ThreadCollector;
+using TournamentParser.Util;
 
 namespace TournamentParser.Tests
 {
@@ -24,6 +28,24 @@ namespace TournamentParser.Tests
 
             Assert.That(threads.Count > 0);
             Assert.That(nonTourThreads.Count > 0);
+        }
+
+        /// <summary>Search and thread page go through the default handler: the browser, which passes Smogon's bot check.</summary>
+        [Test]
+        public async Task Search_FindsRecentReplayPosts_AndTheBrowserReadsTheirPage()
+        {
+            using var client = PoliteHttpMessageHandler.CreateClient(new PoliteHttpMessageHandler());
+            var search = new PostSearch(url => client.GetStringAsync(url));
+
+            var result = await search.SearchForumsAsync([34], DateTime.UtcNow.Date.AddDays(-1));
+
+            Assert.That(result, Is.Not.Null, "guests can search");
+            Assert.That(result!.Hits, Is.Not.Empty);
+            var hit = result.Hits.First(hit => hit.PostId != null);
+            var pageUrl = SmogonPages.PageUrl(hit.ThreadUrl, hit.Page);
+            var page = await client.GetStringAsync(pageUrl);
+            SmogonPages.EnsureThreadPage(page, pageUrl);
+            Assert.That(page, Does.Contain($"data-content=\"post-{hit.PostId}\""), "the position gives the page of the post");
         }
 
         [Test]

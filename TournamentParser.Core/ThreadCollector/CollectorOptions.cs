@@ -16,6 +16,14 @@ namespace TournamentParser.ThreadCollector
         public TimeSpan RecentActivityWindow { get; set; } = TimeSpan.FromDays(7);
 
         /// <summary>
+        /// Find replay posts through Smogon's search, so that of a thread with pairings only the new pages with replay posts are
+        /// read, and page 1 of a thread without pairings only when it got a replay post (or a new title or lock). The search
+        /// covers the posts since the last run; without it (first run, or <see cref="FullRefresh"/>), every new page of a thread
+        /// with pairings is read, and page 1 of every changed thread.
+        /// </summary>
+        public bool UseSearch { get; set; } = true;
+
+        /// <summary>
         /// Upper limit of requests per run (retries not counted); 0 means no limit. When it is reached, the crawl stops with a
         /// <see cref="Util.RequestBudgetExhaustedException"/> and the next run continues from there.
         /// </summary>

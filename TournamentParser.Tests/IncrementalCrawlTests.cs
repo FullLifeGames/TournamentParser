@@ -47,9 +47,9 @@ namespace TournamentParser.Tests
         /// A tournament thread: page 1 has three pairings (Ann won, Cat vs Dan gets replays on later pages, Eve vs Fay stays open),
         /// every later page one replay post by Cat.
         /// </summary>
-        private static FakeForum.Thread TourThread(long id, int pages, DateTime start, string? title = null)
+        private static FakeForum.Thread TourThread(long id, int pages, DateTime start, string? title = null, string? slug = null)
         {
-            var thread = new FakeForum.Thread { Id = id, Slug = "tour-" + id, Title = title ?? $"Tour {id} - Round 1" };
+            var thread = new FakeForum.Thread { Id = id, Slug = slug ?? "tour-" + id, Title = title ?? $"Tour {id} - Round 1" };
             var date = start;
             string NextDate()
             {
@@ -73,6 +73,32 @@ namespace TournamentParser.Tests
             return thread;
         }
 
+        /// <summary>A discussion thread: no pairings in posts 1 and 2, one chat post on every later page.</summary>
+        private static FakeForum.Thread ChatThread(long id, int pages, DateTime start)
+        {
+            var thread = new FakeForum.Thread { Id = id, Slug = "discussion-" + id, Title = $"Discussion {id}" };
+            var date = start;
+            string NextDate()
+            {
+                date = date.AddHours(1);
+                return FakeForum.ToDateTitle(date);
+            }
+            thread.Pages.Add(new List<SyntheticPages.Post> { ChatPost(id, "Host", NextDate()), ChatPost(id, "Gil", NextDate()) });
+            for (var page = 2; page <= pages; page++)
+            {
+                thread.Pages.Add(new List<SyntheticPages.Post> { ChatPost(id, "Gil", NextDate()) });
+            }
+            return thread;
+        }
+
+        private static SyntheticPages.Post ChatPost(long threadId, string author, string dateTitle) => new()
+        {
+            Author = author + threadId,
+            UserId = (int)threadId * 10 + (author == "Host" ? 6 : 7),
+            DateTitle = dateTitle,
+            BodyLines = new List<string> { "good luck everyone" },
+        };
+
         private static SyntheticPages.Post ReplayPost(long threadId, string player, int number, string dateTitle) => new()
         {
             Author = player + threadId,
@@ -85,9 +111,23 @@ namespace TournamentParser.Tests
             },
         };
 
-        /// <summary>A new post is always the newest post of the whole forum.</summary>
-        private string Newest(int hours = 1) =>
-            FakeForum.ToDateTitle(DateTimeOffset.FromUnixTimeSeconds(_forum.AllForums.Max(forum => forum.LatestPostTimestamp)).UtcDateTime.AddHours(hours));
+        /// <summary>
+        /// A new post is always the newest post of the whole forum, and recent: the replay search of the next run reaches back to
+        /// the day before the last run.
+        /// </summary>
+        private string Newest()
+        {
+            var latest = DateTimeOffset.FromUnixTimeSeconds(_forum.AllForums.Max(forum => forum.LatestPostTimestamp)).UtcDateTime;
+            var recent = DateTime.UtcNow.AddHours(-3);
+            return FakeForum.ToDateTitle((latest > recent ? latest : recent).AddMinutes(1));
+        }
+
+        /// <summary>The replay search of a run after one today, over the forums with the given node IDs (and their subforums).</summary>
+        private static string SearchUrl(params long[] nodeIds) =>
+            PostSearch.Url(PostSearch.ReplayQuery, PostSearch.Filter.Forums(nodeIds), DateTime.UtcNow.Date.AddDays(-1), null);
+
+        /// <summary>The replay search of a run in the Tournaments section.</summary>
+        private static readonly string TournamentsSearch = SearchUrl(34);
 
         private FakeForum.Forum Section(string title, string path)
         {
@@ -133,6 +173,30 @@ namespace TournamentParser.Tests
                 .OrderBy(s => s)))
             .ToList();
 
+        /// <summary>The users with matches and their matches; posters without matches may be missing since 3.0.</summary>
+        private static List<string> MatchSummary(SmogonThreadScanner scanner) => Summary(scanner).Where(line => !line.EndsWith(": ")).ToList();
+
+        /// <summary>
+        /// The <see cref="MatchSummary"/> of a scan that reads every page of every thread, as 2.x did: the collector takes all
+        /// pages over from 2.x entries.
+        /// </summary>
+        private List<string> CompleteMatchSummary(string section = "Tournaments")
+        {
+            var http = new FakeHttpMessageHandler();
+            _forum.Serve(http);
+            var cache = new InMemoryDistributedCache();
+            foreach (var thread in _forum.AllForums.SelectMany(forum => forum.Threads))
+            {
+                StoreLegacyEntry(thread, cache: cache);
+            }
+            var threads = new SmogonThreadCollector(cache, new CollectorOptions { HttpClient = new HttpClient(http), UseSearch = false })
+                .GetGeneralThreadsForForums(section).Result;
+            Assert.That(http.Requests, Has.None.Contains("/threads/"), "every page comes from the 2.x entries");
+            var scanner = new SmogonThreadScanner(cache);
+            scanner.ScanThreads(threads).Wait();
+            return MatchSummary(scanner);
+        }
+
         /// <summary>A scan of the same forum without any stored state, for comparison.</summary>
         private List<string> FreshSummary()
         {
@@ -151,7 +215,8 @@ namespace TournamentParser.Tests
         private static string Url(string path) => FakeForum.BaseUrl + path;
 
         /// <summary>Stores a thread the way version 2.x did: the TopicAnalyzeResult under the thread URL.</summary>
-        private void StoreLegacyEntry(FakeForum.Thread thread, Func<TopicAnalyzeResult, TopicAnalyzeResult>? change = null, string? key = null)
+        private void StoreLegacyEntry(FakeForum.Thread thread, Func<TopicAnalyzeResult, TopicAnalyzeResult>? change = null, string? key = null,
+            InMemoryDistributedCache? cache = null)
         {
             var http = new FakeHttpMessageHandler();
             for (var page = 1; page <= thread.Pages.Count; page++)
@@ -164,7 +229,7 @@ namespace TournamentParser.Tests
             {
                 var result = new SmogonThreadScanner().AnalyzeTopic(thread.Url, CancellationToken.None).Result!;
                 result = change?.Invoke(result) ?? result;
-                _cache.Store[key ?? thread.Url] = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(result));
+                (cache ?? _cache).Store[key ?? thread.Url] = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(result));
             }
             finally
             {
@@ -219,6 +284,7 @@ namespace TournamentParser.Tests
             Assert.That(Requests, Is.EqualTo(new[]
             {
                 FakeForum.IndexUrl,
+                TournamentsSearch,
                 Url(Tournaments),
                 Url(TourAlpha),
                 t1.Url, t1.Url + "page-3",
@@ -229,7 +295,7 @@ namespace TournamentParser.Tests
         }
 
         [Test]
-        public void NewPage_ReadsPageOneTheLastKnownPageAndTheNewPage()
+        public void NewPage_ReadsPageOneAndThePageWithTheNewReplayPost()
         {
             var section = Section("Tournaments", Tournaments);
             var t1 = TourThread(1, 3, OldStart);
@@ -238,6 +304,28 @@ namespace TournamentParser.Tests
 
             t1.Pages.Add(new List<SyntheticPages.Post> { ReplayPost(1, "Cat", 4, Newest()) });
             var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[]
+            {
+                FakeForum.IndexUrl,
+                TournamentsSearch,
+                Url(Tournaments),
+                t1.Url, t1.Url + "page-4",
+            }), "the search shows that page 3 got no replay post");
+            Assert.That(Summary(Scan(threads)), Is.EqualTo(FreshSummary()));
+        }
+
+        [Test]
+        public void NewPage_WithoutSearch_ReadsPageOneTheLastKnownPageAndTheNewPage()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var t1 = TourThread(1, 3, OldStart);
+            section.Threads.Add(t1);
+            var options = Options(o => o.UseSearch = false);
+            Crawl(options: options);
+
+            t1.Pages.Add(new List<SyntheticPages.Post> { ReplayPost(1, "Cat", 4, Newest()) });
+            var threads = Crawl(options: options);
 
             Assert.That(Requests, Is.EqualTo(new[]
             {
@@ -261,7 +349,7 @@ namespace TournamentParser.Tests
             t1.Pages[1].Add(ReplayPost(1, "Cat", 50, newest));
             var threads = Crawl();
 
-            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, Url(Tournaments), t1.Url, t1.Url + "page-2" }));
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), t1.Url, t1.Url + "page-2" }));
             Assert.That(_cache.Store.Keys, Has.None.EqualTo("tp:v3:page:1:3"));
             Assert.That(Summary(Scan(threads)), Is.EqualTo(FreshSummary()));
         }
@@ -280,7 +368,7 @@ namespace TournamentParser.Tests
             t1.Pages[0].Add(ReplayPost(1, "Cat", 2, Newest()));
             var threads = Crawl();
 
-            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, Url(Tournaments), Url(TourAlpha), t1.Url }));
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), Url(TourAlpha), t1.Url }));
             Assert.That(threads.Keys, Is.EquivalentTo(new[] { Url(Tournaments), Url(TourAlpha), Url(TourBeta) }),
                 "the skipped subforum still contributes its stored threads");
             Assert.That(Summary(Scan(threads)), Is.EqualTo(FreshSummary()));
@@ -299,7 +387,7 @@ namespace TournamentParser.Tests
             threads[0].Pages[0].Add(ReplayPost(1, "Cat", 2, Newest()));
             Crawl();
 
-            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, Url(Tournaments), threads[0].Url }));
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), threads[0].Url }));
         }
 
         [Test]
@@ -315,7 +403,8 @@ namespace TournamentParser.Tests
             thread.Locked = true;
             var threads = Crawl();
 
-            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, Url(Tournaments), thread.Url, thread.Url + "page-2" }));
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), thread.Url }),
+                "page 1 shows the lock; the search found no new replay posts");
             var after = Summary(Scan(threads));
             Assert.That(after, Has.Some.StartsWith("eve1: eve1 vs fay1 w= f=True"), "matches of a locked thread are finished");
             Assert.That(after, Is.EqualTo(FreshSummary()));
@@ -333,8 +422,11 @@ namespace TournamentParser.Tests
             thread.Title = "Tour 1 - Finals [Won by Ann1]";
             var threads = Crawl();
 
-            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, Url(Tournaments), thread.Url, thread.Url + "page-2" }));
-            Assert.That(Summary(Scan(threads)), Has.Some.Contains("t=Tour 1 - Finals [Won by Ann1]"));
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), thread.Url }));
+            var summary = Summary(Scan(threads));
+            Assert.That(summary, Has.Some.Contains("t=Tour 1 - Finals [Won by Ann1]"));
+            Assert.That(summary, Has.None.Contains("t=Tour 1 - Round 1"), "the stored page 2 still shows the old title");
+            Assert.That(summary, Is.EqualTo(FreshSummary()));
         }
 
         [Test]
@@ -349,7 +441,7 @@ namespace TournamentParser.Tests
             Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl }));
 
             Crawl();
-            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, Url(Tournaments) }),
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments) }),
                 "with the default window, the recently active forum is listed again");
         }
 
@@ -407,7 +499,7 @@ namespace TournamentParser.Tests
 
             var threads = Crawl();
 
-            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, Url(Tournaments), thread.Url }));
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), thread.Url }));
             Assert.That(threads[Url(Tournaments)], Has.One.EqualTo(thread.Url));
         }
 
@@ -450,6 +542,288 @@ namespace TournamentParser.Tests
             var error = Assert.Throws<AggregateException>(() => collector.GetGeneralThreadsForForums("Tournaments").Wait())!;
             Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
         }
+
+        #region Relevance and search
+
+        private static string ThreadSearchUrl(long threadId) => PostSearch.Url(PostSearch.ReplayQuery, PostSearch.Filter.Thread(threadId), null, null);
+
+        private ThreadCrawlState StoredThread(long threadId) =>
+            JsonConvert.DeserializeObject<ThreadCrawlState>(Encoding.UTF8.GetString(_cache.Store[$"tp:v3:thread:{threadId}"]))!;
+
+        [Test]
+        public void ThreadWithoutPairings_OnlyPageOneIsRead()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var chat = ChatThread(1, 3, OldStart);
+            chat.Pages[2].Add(ReplayPost(1, "Cat", 1, FakeForum.ToDateTitle(OldStart.AddDays(1))));
+            section.Threads.Add(chat);
+            section.Threads.Add(TourThread(2, 2, OldStart));
+
+            var threads = Crawl();
+
+            Assert.That(Requests, Has.Member(chat.Url).And.None.StartsWith(chat.Url + "page-"));
+            Assert.That(StoredThread(1).HasPairings, Is.False);
+            Assert.That(threads[Url(Tournaments)], Has.Member(chat.Url));
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()), "a replay post without pairings is no match");
+
+            Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl }), "the other pages do not count as missing");
+        }
+
+        [Test]
+        public void ThreadWithoutPairings_IsReadAgainOnlyForReplayPosts()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var chat = ChatThread(1, 3, OldStart);
+            section.Threads.Add(chat);
+            Crawl();
+
+            chat.Pages[2].Add(ChatPost(1, "Gil", Newest()));
+            var threads = Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments) }));
+            Assert.That(threads[Url(Tournaments)], Is.EqualTo(new[] { chat.Url }));
+
+            chat.Pages[2].Add(ReplayPost(1, "Cat", 1, Newest()));
+            Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), chat.Url }),
+                "the host may have added pairings to the first post");
+        }
+
+        [Test]
+        public void ThreadWithoutPairings_TitleChange_ReadsPageOne()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var start = DateTime.UtcNow.AddDays(-2);
+            var chat = ChatThread(1, 3, new DateTime(start.Year, start.Month, start.Day, start.Hour, start.Minute, 0));
+            section.Threads.Add(chat);
+            Crawl();
+
+            chat.Title = "Discussion 1 - Round 1";
+            Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), chat.Url }));
+        }
+
+        [Test]
+        public void ThreadWithoutPairings_GetsPairings_ReadsTheOtherPages()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var chat = ChatThread(1, 3, OldStart);
+            section.Threads.Add(chat);
+            Crawl();
+
+            // The host edits the pairings into the first post, and a player posts a replay.
+            chat.Pages[0][0].BodyLines.Add("<b>Cat1</b> vs. Dan1");
+            chat.Pages[2].Add(ReplayPost(1, "Cat", 1, Newest()));
+            var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), chat.Url, chat.Url + "page-2", chat.Url + "page-3" }));
+            var summary = MatchSummary(Scan(threads));
+            Assert.That(summary, Has.Some.Contains("gen9ou-1001"));
+            Assert.That(summary, Is.EqualTo(CompleteMatchSummary()));
+        }
+
+        [Test]
+        public void ThreadWithPairings_ReadsOnlyTheNewPagesWithReplayPosts()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var tour = TourThread(1, 2, OldStart);
+            section.Threads.Add(tour);
+            Crawl();
+
+            tour.Pages.Add(new List<SyntheticPages.Post> { ChatPost(1, "Gil", Newest()) });
+            tour.Pages.Add(new List<SyntheticPages.Post> { ReplayPost(1, "Cat", 4, Newest()) });
+            tour.Pages.Add(new List<SyntheticPages.Post> { ChatPost(1, "Gil", Newest()) });
+            var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), tour.Url, tour.Url + "page-4" }));
+            Assert.That(StoredThread(1).SkippedPages, Is.EqualTo(new[] { 3, 5 }));
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+
+            tour.Pages[4].Add(ChatPost(1, "Gil", Newest()));
+            threads = Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), tour.Url }));
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+        }
+
+        [Test]
+        public void ReplayThread_ReadsEveryNewPage()
+        {
+            // In a replay thread, pairings in any post count, with or without replays.
+            var section = Section("Tournaments", Tournaments);
+            var replays = TourThread(1, 2, OldStart, slug: "tour-1-replays");
+            section.Threads.Add(replays);
+            Crawl();
+
+            replays.Pages.Add(new List<SyntheticPages.Post>
+            {
+                new() { Author = "Host1", UserId = 10, DateTitle = Newest(), BodyLines = new List<string> { "<b>Gus1</b> vs. Hal1" } },
+            });
+            replays.Pages.Add(new List<SyntheticPages.Post> { ReplayPost(1, "Cat", 4, Newest()) });
+            var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[]
+            {
+                FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), replays.Url, replays.Url + "page-2", replays.Url + "page-3", replays.Url + "page-4",
+            }));
+            var summary = MatchSummary(Scan(threads));
+            Assert.That(summary, Has.Some.StartsWith("gus1: gus1 vs hal1 w=gus1"));
+            Assert.That(summary, Is.EqualTo(CompleteMatchSummary()));
+        }
+
+        [Test]
+        public void NewLongThread_SearchesForItsReplayPostsFirst()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var tour = TourThread(1, 1, OldStart);
+            var date = OldStart.AddDays(1);
+            for (var page = 2; page <= 12; page++)
+            {
+                date = date.AddHours(1);
+                tour.Pages.Add(new List<SyntheticPages.Post>
+                {
+                    page is 4 or 9 ? ReplayPost(1, "Cat", page, FakeForum.ToDateTitle(date)) : ChatPost(1, "Gil", FakeForum.ToDateTitle(date)),
+                });
+            }
+            section.Threads.Add(tour);
+
+            var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[]
+            {
+                FakeForum.IndexUrl, Url(Tournaments), tour.Url, ThreadSearchUrl(1), tour.Url + "page-4", tour.Url + "page-9",
+            }));
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+
+            Crawl();
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl }), "pages without replay posts do not count as missing");
+        }
+
+        [Test]
+        public void NewLongThread_WithReplaysOnMostPages_IsReadWithoutWaitingForTheSearch()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var tour = TourThread(1, 1, OldStart);
+            var date = OldStart.AddDays(1);
+            for (var page = 2; page <= 12; page++)
+            {
+                tour.Pages.Add(Enumerable.Range(1, 5).Select(i => ReplayPost(1, "Cat", page * 10 + i, FakeForum.ToDateTitle(date = date.AddHours(1)))).ToList());
+            }
+            section.Threads.Add(tour);
+
+            var threads = Crawl();
+
+            // 55 replay posts take 6 result pages, more than half of the 11 pages to read.
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, Url(Tournaments), tour.Url, ThreadSearchUrl(1) }
+                .Concat(Enumerable.Range(2, 11).Select(page => tour.Url + "page-" + page))));
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+        }
+
+        [Test]
+        public void SearchNotAvailable_ReadsThePagesDirectly()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var tour = TourThread(1, 3, OldStart);
+            section.Threads.Add(tour);
+            Crawl();
+
+            _http.Map(TournamentsSearch, "<html><body><div class=\"blockMessage\">You must be logged-in to do that.</div></body></html>");
+            tour.Pages[2].Add(ReplayPost(1, "Cat", 99, Newest()));
+            var longTour = TourThread(2, 8, DateTime.UtcNow.AddHours(-2));
+            section.Threads.Add(longTour);
+            var threads = Crawl();
+
+            Assert.That(Requests.Where(url => url.Contains("/search/")), Is.EqualTo(new[] { TournamentsSearch }), "no thread search either");
+            Assert.That(Requests, Has.Member(tour.Url + "page-3").And.Member(longTour.Url + "page-8"));
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+        }
+
+        [Test]
+        public void PostAfterTheSearchStarted_IsReadWithoutTheSearch()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var tour = TourThread(1, 3, OldStart);
+            section.Threads.Add(tour);
+            Crawl();
+
+            // The fake search does not find posts dated in the future, like a post sent while the search runs.
+            tour.Pages[2].Add(ReplayPost(1, "Cat", 99, FakeForum.ToDateTitle(DateTime.UtcNow.AddMinutes(30))));
+            var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), tour.Url, tour.Url + "page-3" }));
+            Assert.That(MatchSummary(Scan(threads)), Has.Some.Contains("gen9ou-1099"));
+        }
+
+        [Test]
+        public void PostsDeletedAfterTheSearch_TheReplayPostIsFoundThroughItsLink()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var tour = TourThread(1, 3, OldStart);
+            section.Threads.Add(tour);
+            Crawl();
+
+            var replay = ReplayPost(1, "Cat", 99, Newest());
+            tour.Pages[2].Add(replay);
+            var moved = false;
+            _http.BeforeResponse = url =>
+            {
+                if (url == tour.Url && !moved)
+                {
+                    // Posts on page 2 were deleted after the search: the replay post moved up to page 2.
+                    moved = true;
+                    tour.Pages[2].Remove(replay);
+                    tour.Pages[1].Add(replay);
+                    _forum.Serve(_http);
+                }
+            };
+            var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[]
+            {
+                FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), tour.Url, tour.Url + "page-3", tour.Url + "post-" + replay.PostId,
+            }));
+            var summary = MatchSummary(Scan(threads));
+            Assert.That(summary, Has.Some.Contains("gen9ou-1099"));
+            Assert.That(summary, Is.EqualTo(CompleteMatchSummary()));
+        }
+
+        [Test]
+        public void MixedForum_MatchesStayTheSameAsAScanOfEveryPage()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var alpha = Sub(section, "Tour Alpha", TourAlpha);
+            var tour = TourThread(1, 3, OldStart);
+            var chat = ChatThread(2, 3, OldStart);
+            chat.Pages[1].Add(ReplayPost(2, "Cat", 1, FakeForum.ToDateTitle(OldStart.AddDays(1))));
+            var replays = TourThread(3, 2, OldStart, slug: "tour-3-replays");
+            var longTour = TourThread(4, 9, OldStart);
+            section.Threads.AddRange(new[] { tour, chat });
+            alpha.Threads.AddRange(new[] { replays, longTour });
+
+            var threads = Crawl();
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+
+            tour.Pages[2].Add(ReplayPost(1, "Eve", 50, Newest()));
+            chat.Pages[2].Add(ChatPost(2, "Gil", Newest()));
+            longTour.Pages[8].Add(ReplayPost(4, "Eve", 51, Newest()));
+            longTour.Pages.Add(new List<SyntheticPages.Post> { ChatPost(4, "Gil", Newest()) });
+            replays.Pages.Add(new List<SyntheticPages.Post>
+            {
+                new() { Author = "Host3", UserId = 30, DateTitle = Newest(), BodyLines = new List<string> { "Gus3 vs. <b>Hal3</b>" } },
+            });
+            threads = Crawl();
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+
+            tour.Locked = true;
+            chat.Pages[0][0].BodyLines.Add("<b>Cat2</b> vs. Dan2");
+            chat.Pages[2].Add(ReplayPost(2, "Cat", 2, Newest()));
+            longTour.Pages[9].Add(ReplayPost(4, "Cat", 52, Newest()));
+            threads = Crawl();
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+            Assert.That(Requests.Count(url => url.Contains("/search/")), Is.EqualTo(1), "one search per run covers all forums");
+        }
+
+        #endregion
 
         #region Migration of 2.x entries
 
@@ -609,6 +983,21 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void LegacyEntry_OfAThreadWithoutPairings_NeedsOnlyPageOne()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var chat = ChatThread(1, 3, OldStart);
+            section.Threads.Add(chat);
+            StoreLegacyEntry(chat);
+            chat.Pages.Add(new List<SyntheticPages.Post> { ChatPost(1, "Gil", Newest()) });
+
+            var threads = Crawl();
+
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, Url(Tournaments), chat.Url }));
+            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+        }
+
+        [Test]
         public void LegacyCoversLatestPost_ComparesScanTimesInUtcAndDisplayDatesToTheMinute()
         {
             var item = new ThreadListItem
@@ -665,8 +1054,8 @@ namespace TournamentParser.Tests
             _http.ClearRequests();
             var again = new SmogonParser(_cache, Options()).GetMatchesForUsers().Result;
 
-            // Forums without a latest post on the index (subforum links) are listed every run.
-            Assert.That(_http.Requests, Is.EquivalentTo(new[] { FakeForum.IndexUrl, ps.Url, bss.Url }));
+            // Forums without a latest post on the index (subforum links) are listed (and searched) every run.
+            Assert.That(_http.Requests, Is.EquivalentTo(new[] { FakeForum.IndexUrl, SearchUrl(698), ps.Url, SearchUrl(532), bss.Url }));
             Assert.That(again.Keys, Is.EquivalentTo(users.Keys));
         }
 

@@ -36,6 +36,7 @@ namespace TournamentParser.Util
     /// <summary>
     /// Sends at most one request per host at a time, waits <see cref="PoliteHttpOptions.MinDelay"/> between them,
     /// honours Retry-After, retries only transient failures and identifies itself with a User-Agent.
+    /// By default the requests go through a headless browser (<see cref="PlaywrightHttpMessageHandler"/>).
     /// </summary>
     public class PoliteHttpMessageHandler : DelegatingHandler
     {
@@ -66,7 +67,14 @@ namespace TournamentParser.Util
         /// </summary>
         public static HttpClient CreateClient(PoliteHttpMessageHandler handler) => new(handler) { Timeout = TimeSpan.FromMinutes(30) };
 
-        internal static SocketsHttpHandler CreateDefaultInnerHandler() => new()
+        /// <summary>
+        /// Requests go through a headless browser: Smogon's thread pages answer plain HTTP clients with a JavaScript bot check.
+        /// Pass <see cref="CreatePlainHttpHandler"/> as inner handler for plain HTTP requests.
+        /// </summary>
+        private static HttpMessageHandler CreateDefaultInnerHandler() => new PlaywrightHttpMessageHandler();
+
+        /// <summary>A handler for plain HTTP requests, without browser.</summary>
+        public static SocketsHttpHandler CreatePlainHttpHandler() => new()
         {
             // Forum HTML compresses roughly 5-10x; without this every page is fetched uncompressed.
             AutomaticDecompression = DecompressionMethods.All,
@@ -135,7 +143,7 @@ namespace TournamentParser.Util
                     error!.Throw();
                 }
 
-                Console.WriteLine($"{(response != null ? "HTTP " + (int)response.StatusCode : error!.SourceException.GetType().Name)} for {request.RequestUri}, retry {attempt + 1}/{_options.MaxRetries} in {delay.TotalSeconds:0}s");
+                Console.WriteLine($"{(response != null ? "HTTP " + (int)response.StatusCode : error!.SourceException.GetType().Name + " (" + error.SourceException.Message + ")")} for {request.RequestUri}, retry {attempt + 1}/{_options.MaxRetries} in {delay.TotalSeconds:0}s");
                 response?.Dispose();
 
                 // Every other request to this host waits as well.

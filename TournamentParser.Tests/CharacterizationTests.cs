@@ -724,9 +724,9 @@ namespace TournamentParser.Tests
         }
 
         [Test]
-        public void PoliteHttpMessageHandler_EnablesAutomaticDecompression()
+        public void PlainHttpHandler_EnablesAutomaticDecompression()
         {
-            using var handler = PoliteHttpMessageHandler.CreateDefaultInnerHandler();
+            using var handler = PoliteHttpMessageHandler.CreatePlainHttpHandler();
             Assert.That(handler.AutomaticDecompression, Is.EqualTo(System.Net.DecompressionMethods.All));
         }
 

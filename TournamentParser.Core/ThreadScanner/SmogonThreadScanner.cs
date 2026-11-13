@@ -84,7 +84,10 @@ namespace TournamentParser.ThreadScanner
         /// (post bodies and the markers around them). Parsing these lines gives the same result as parsing the whole page,
         /// so the crawl state stores them instead of the page.
         /// </summary>
-        internal static string ExtractImportantLines(string url, int page, string html)
+        internal static string ExtractImportantLines(string url, int page, string html) => ExtractImportantLines(url, page, html, out _);
+
+        /// <param name="hasPairings">Whether the page holds pairings that later replay posts can belong to; see <see cref="HasPairings"/>.</param>
+        internal static string ExtractImportantLines(string url, int page, string html, out bool hasPairings)
         {
             // Which lines are kept depends only on the page itself, so a throwaway scanner gives the same lines as the real one.
             var scanner = new SmogonThreadScanner();
@@ -98,8 +101,24 @@ namespace TournamentParser.ThreadScanner
             {
                 scanner.HandleLine(url, line, thread, currentlyUserToMatch, lineDataHandler);
             }
+            hasPairings = currentlyUserToMatch.Count > 0;
             return string.Join('\n', lineDataHandler.FullImportantSiteBits);
         }
+
+        /// <summary>
+        /// Whether page 1 of a thread (the whole page, or its stored lines) holds pairings in posts 1 or 2. A replay post on a later
+        /// page only becomes a match if its author is paired in the thread (<see cref="DetermineIfPostAboutMatch"/>), and pairings
+        /// are only taken from posts 1 and 2 (<see cref="IsReplayCollectionPost"/>). So a thread without them yields matches from
+        /// page 1 alone, unless its URL marks it as a replay thread (<see cref="IsReplayThread"/>).
+        /// </summary>
+        internal static bool HasPairings(string url, string firstPage)
+        {
+            ExtractImportantLines(url, 1, firstPage, out var hasPairings);
+            return hasPairings;
+        }
+
+        /// <summary>In a replay thread every post is read for pairings, not only posts 1 and 2.</summary>
+        internal static bool IsReplayThread(string url) => url.Contains("-replay");
 
         private static string GetThreadId(string url)
         {
@@ -201,8 +220,13 @@ namespace TournamentParser.ThreadScanner
             }
             else if (line.Contains("<h1 class=\"p-title-value\">"))
             {
-                thread.Name = line[..line.LastIndexOf("<")];
-                thread.Name = thread.Name[(thread.Name.LastIndexOf(">") + 1)..];
+                // Stored pages are read at different times. The first page is read again whenever the title changes,
+                // so its title is the current one.
+                if (thread.Name == null)
+                {
+                    thread.Name = line[..line.LastIndexOf("<")];
+                    thread.Name = thread.Name[(thread.Name.LastIndexOf(">") + 1)..];
+                }
             }
             else if (line.Contains("<article class=\"message-body js-selectToQuote\">"))
             {
@@ -300,7 +324,7 @@ namespace TournamentParser.ThreadScanner
 
         private static bool IsReplayCollectionPost(string url, LineDataHandler lineDataHandler)
         {
-            return lineDataHandler.PostNumber == 1 || lineDataHandler.PostNumber == 2 || url.Contains("-replay");
+            return lineDataHandler.PostNumber == 1 || lineDataHandler.PostNumber == 2 || IsReplayThread(url);
         }
 
         private TournamentMatch DetermineMatch(string line, string strippedLine, Thread thread, Dictionary<string, List<TournamentMatch>> currentlyUserToMatch, LineDataHandler lineDataHandler)

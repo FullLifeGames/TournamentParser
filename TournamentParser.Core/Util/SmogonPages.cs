@@ -113,6 +113,26 @@ namespace TournamentParser.Util
             return pages;
         }
 
+        [GeneratedRegex("class=\"pageNav-page pageNav-page--current[^\"]*\"[^>]*>\\s*<a[^>]*>\\s*(\\d+)\\s*</a>")]
+        private static partial Regex CurrentPageRegex();
+
+        /// <summary>The page shown, from the page navigation (a post link like ".../post-123" lands on the page of the post).</summary>
+        public static int GetCurrentPage(string html)
+        {
+            var current = CurrentPageRegex().Match(html);
+            return current.Success && int.TryParse(current.Groups[1].Value, out var page) ? page : 1;
+        }
+
+        [GeneratedRegex("\\.(\\d+)/?$")]
+        private static partial Regex NodeIdRegex();
+
+        /// <summary>The node ID of a forum URL (".../forums/tournaments.34/" is 34), null if there is none (".../forums/gen1/").</summary>
+        public static long? GetForumId(string forumUrl)
+        {
+            var id = NodeIdRegex().Match(forumUrl);
+            return id.Success ? long.Parse(id.Groups[1].Value) : null;
+        }
+
         // XenForo leaves out the slug (".../threads/123/") when a title has no URL-safe characters.
         [GeneratedRegex("/threads/(?:[^/]*\\.)?(\\d+)/?$")]
         private static partial Regex ThreadIdRegex();

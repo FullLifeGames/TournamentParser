@@ -1,9 +1,11 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace TournamentParser.Tests.TestSupport
 {
@@ -69,9 +71,19 @@ namespace TournamentParser.Tests.TestSupport
 
         public static string ToDateTitle(DateTime utc) => utc.ToString("MMM d, yyyy 'at' h:mm tt", CultureInfo.GetCultureInfo("en-US"));
 
-        /// <summary>Maps every page of the forum in <paramref name="http"/>.</summary>
+        private long _nextPostId = 1;
+
+        /// <summary>Requests to the search (all URLs below /forums/search/) answered so far.</summary>
+        public int SearchRequests { get; private set; }
+
+        /// <summary>
+        /// Maps every page of the forum in <paramref name="http"/>. Searches for replay posts and post links
+        /// (".../post-123") are answered from the current state.
+        /// </summary>
         public void Serve(FakeHttpMessageHandler http)
         {
+            AssignPostIds();
+            http.Fallback = Answer;
             http.Map(IndexUrl, IndexPage());
             foreach (var forum in AllForums)
             {
@@ -91,7 +103,131 @@ namespace TournamentParser.Tests.TestSupport
         }
 
         public static string ThreadPage(Thread thread, int page) =>
-            SyntheticPages.ThreadPage(WebUtility.HtmlEncode(thread.Title), thread.Pages[page - 1], thread.Pages.Count, thread.Locked);
+            SyntheticPages.ThreadPage(WebUtility.HtmlEncode(thread.Title), thread.Pages[page - 1], thread.Pages.Count, thread.Locked, page);
+
+        /// <summary>Post IDs stay the same once given, like on XenForo.</summary>
+        private void AssignPostIds()
+        {
+            foreach (var post in AllForums.SelectMany(forum => forum.Threads).SelectMany(thread => thread.Pages).SelectMany(page => page))
+            {
+                if (post.PostId == 0)
+                {
+                    post.PostId = _nextPostId++;
+                }
+            }
+        }
+
+        private string? Answer(string url)
+        {
+            if (url.StartsWith(BaseUrl + "/forums/search/"))
+            {
+                SearchRequests++;
+                return SearchPage(url);
+            }
+            var postLink = Regex.Match(url, @"/forums/threads/[^/]*\.(\d+)/post-(\d+)$");
+            if (postLink.Success)
+            {
+                var thread = AllForums.SelectMany(forum => forum.Threads).FirstOrDefault(t => t.Id == long.Parse(postLink.Groups[1].Value));
+                var postId = long.Parse(postLink.Groups[2].Value);
+                var page = thread?.Pages.FindIndex(posts => posts.Any(post => post.PostId == postId)) ?? -1;
+                return page >= 0 ? ThreadPage(thread!, page + 1) : null;
+            }
+            return null;
+        }
+
+        public const string ReplayMarker = "replay.pokemonshowdown.com";
+
+        /// <summary>
+        /// Smogon's search for replay posts, newest first: 10 results per page, cut off after 200 results. Supports the filters
+        /// the crawler uses: forums (with subforums), a thread, and dates (UTC days: newer_than inclusive, older_than exclusive).
+        /// Posts dated in the future count as not posted yet.
+        /// </summary>
+        public string SearchPage(string url)
+        {
+            var parameters = url[(url.IndexOf('?') + 1)..].Split('&')
+                .Select(part => part.Split('=', 2))
+                .Select(pair => (Key: Uri.UnescapeDataString(pair[0]), Value: pair.Length > 1 ? Uri.UnescapeDataString(pair[1]) : ""))
+                .ToList();
+            string? Get(string key) => parameters.FirstOrDefault(p => p.Key == key).Value;
+            if (Get("q") != ReplayMarker)
+            {
+                throw new InvalidOperationException("The fake search only knows the replay query: " + url);
+            }
+            var newer = Get("c[newer_than]") is string n ? DateTime.ParseExact(n, "yyyy-MM-dd", CultureInfo.InvariantCulture) : DateTime.MinValue;
+            var older = Get("c[older_than]") is string o ? DateTime.ParseExact(o, "yyyy-MM-dd", CultureInfo.InvariantCulture) : DateTime.MaxValue;
+            long? threadId = Get("c[thread]") is string t ? long.Parse(t) : null;
+            var nodeIds = parameters.Where(p => p.Key.StartsWith("c[nodes]")).Select(p => long.Parse(p.Value)).ToHashSet();
+            var withSubForums = Get("c[child_nodes]") == "1";
+            var page = Get("page") is string pageValue ? int.Parse(pageValue) : 1;
+
+            IEnumerable<Forum> scope = AllForums;
+            if (nodeIds.Count > 0)
+            {
+                scope = AllForums.Where(forum => nodeIds.Contains(NodeId(forum)))
+                    .SelectMany(forum => withSubForums ? forum.Descendants.Prepend(forum) : new[] { forum })
+                    .Distinct();
+            }
+            var hits = new List<(Forum Forum, Thread Thread, SyntheticPages.Post Post, int Position, DateTime Date)>();
+            foreach (var forum in scope)
+            {
+                foreach (var thread in forum.Threads.Where(t => threadId == null || t.Id == threadId))
+                {
+                    // Smogon shows 25 posts per page; the synthetic pages hold fewer, as if the rest were posts without replays.
+                    foreach (var (post, position) in thread.Pages.SelectMany((posts, pageIndex) => posts.Select((post, i) => (post, pageIndex * 25 + i + 1))))
+                    {
+                        var date = DateTimeOffset.FromUnixTimeSeconds(ToTimestamp(post.DateTitle)).UtcDateTime;
+                        // Posts dated after now are posted after the search ran.
+                        if (post.BodyLines.Any(line => line.Contains(ReplayMarker)) && date >= newer && date < older && date <= DateTime.UtcNow)
+                        {
+                            hits.Add((forum, thread, post, position, date));
+                        }
+                    }
+                }
+            }
+            var results = hits.OrderByDescending(hit => hit.Date).ThenByDescending(hit => hit.Position).Take(200).ToList();
+            var pageCount = Math.Max(1, (results.Count + 9) / 10);
+
+            var sb = new StringBuilder();
+            sb.Append("<html data-template=\"search_results\">\n<body data-template=\"search_results\">\n");
+            var otherParameters = string.Join("&amp;", parameters.Where(p => p.Key != "page").Select(p => p.Key + "=" + p.Value));
+            if (pageCount > 1)
+            {
+                sb.Append("<nav class=\"pageNavWrapper pageNavWrapper--mixed\">\n<ul class=\"pageNav-main\">\n");
+                for (var number = 1; number <= pageCount; number++)
+                {
+                    sb.Append($"<li class=\"pageNav-page \"><a href=\"/forums/search/1/?page={number}&amp;{otherParameters}\">{number}</a></li>\n");
+                }
+                sb.Append("</ul>\n");
+                if (page < pageCount)
+                {
+                    sb.Append($"<a href=\"/forums/search/1/?page={page + 1}&amp;{otherParameters}\" class=\"pageNav-jump pageNav-jump--next\">Next</a>\n");
+                }
+                sb.Append("</nav>\n");
+            }
+            if (results.Count == 0)
+            {
+                sb.Append("<div class=\"blockMessage\">\nNo results found.\n</div>\n");
+            }
+            sb.Append("<ol class=\"block-body\">\n");
+            foreach (var hit in results.Skip((page - 1) * 10).Take(10))
+            {
+                var timestamp = new DateTimeOffset(hit.Date, TimeSpan.Zero).ToUnixTimeSeconds();
+                sb.Append($"<li class=\"block-row block-row--separated  js-inlineModContainer\" data-author=\"{hit.Post.Author}\">\n");
+                sb.Append($"\t<h3 class=\"contentRow-title\">\n\t\t<a href=\"{hit.Thread.Path}{(hit.Position == 1 ? "" : "post-" + hit.Post.PostId)}\">{WebUtility.HtmlEncode(hit.Thread.Title)}</a>\n\t</h3>\n");
+                sb.Append("\t<ul class=\"listInline listInline--bullet\">\n");
+                if (hit.Position > 1)
+                {
+                    sb.Append($"\t\t<li>Post #{hit.Position:N0}</li>\n");
+                }
+                sb.Append($"\t\t<li><time  class=\"u-dt\" dir=\"auto\" datetime=\"{hit.Date:yyyy-MM-ddTHH:mm:ssZ}\" data-timestamp=\"{timestamp}\" title=\"x\">x</time></li>\n");
+                sb.Append($"\t\t<li>Forum: <a href=\"{hit.Forum.Path}\">{WebUtility.HtmlEncode(hit.Forum.Title)}</a></li>\n");
+                sb.Append("\t</ul>\n</li>\n");
+            }
+            sb.Append("</ol>\n</body>\n</html>\n");
+            return sb.ToString();
+        }
+
+        public static long NodeId(Forum forum) => long.Parse(Regex.Match(forum.Path, @"\.(\d+)/$").Groups[1].Value);
 
         public string IndexPage()
         {

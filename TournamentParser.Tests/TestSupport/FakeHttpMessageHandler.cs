@@ -1,3 +1,4 @@
+#nullable enable
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -27,6 +28,12 @@ namespace TournamentParser.Tests.TestSupport
                 }
             }
         }
+
+        /// <summary>Answers URLs without mapping; null means 404.</summary>
+        public System.Func<string, string?>? Fallback { get; set; }
+
+        /// <summary>Called with the URL of each request before it is answered, so tests can change the responses mid-run.</summary>
+        public System.Action<string>? BeforeResponse { get; set; }
 
         public void Map(string url, string content)
         {
@@ -59,6 +66,7 @@ namespace TournamentParser.Tests.TestSupport
             {
                 _requests.Add(url);
             }
+            BeforeResponse?.Invoke(url);
             if (_statuses.TryGetValue(url, out var statusCode))
             {
                 return Task.FromResult(new HttpResponseMessage(statusCode));
@@ -68,6 +76,13 @@ namespace TournamentParser.Tests.TestSupport
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(content),
+                });
+            }
+            if (Fallback?.Invoke(url) is string generated)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(generated),
                 });
             }
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
