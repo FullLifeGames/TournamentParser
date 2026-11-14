@@ -246,6 +246,7 @@ namespace TournamentParser.ThreadCollector
                 {
                     pages = SmogonPages.GetNumberOfPages(site);
                     subForums = ForumPageParser.ParseNodes(site);
+                    EnsureSubForumsRead(forum, subForums, site, pageUrl);
                 }
 
                 var reachedKnownThreads = false;
@@ -336,6 +337,20 @@ namespace TournamentParser.ThreadCollector
             forum.CoveredUntil = coveredUntil;
             _store.SetForum(url, forum);
             return clean;
+        }
+
+        /// <summary>
+        /// A subforum of the last run that the listing still links to but that was not read means changed markup: its threads
+        /// would drop out of the output. Subforums that Smogon moved elsewhere are no longer linked and drop out.
+        /// </summary>
+        private static void EnsureSubForumsRead(ForumCrawlState forum, IList<ForumNode> subForums, string site, string pageUrl)
+        {
+            var unread = forum.SubForums.FirstOrDefault(subForum => subForums.All(node => node.Url != subForum)
+                && site.Contains("href=\"" + (subForum.StartsWith(Common.SmogonBaseUrl) ? subForum[Common.SmogonBaseUrl.Length..] : subForum) + "\""));
+            if (unread != null)
+            {
+                throw new UnexpectedPageException(pageUrl, $"the subforum {unread} is linked, but could not be read");
+            }
         }
 
         /// <summary>

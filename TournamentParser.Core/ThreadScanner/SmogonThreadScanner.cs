@@ -236,7 +236,7 @@ namespace TournamentParser.ThreadScanner
             {
                 thread.Locked = true;
             }
-            else if (SmogonPages.ContainsPostStart(line))
+            else if (SmogonPages.IsPostStart(line))
             {
                 lineDataHandler.PostStarted = true;
                 lineDataHandler.FullPost = new StringBuilder("");

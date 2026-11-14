@@ -46,16 +46,26 @@ namespace TournamentParser.Util
     internal static partial class SmogonPages
     {
         /// <summary>
-        /// Start of every post until 2026-11-13. <see cref="ThreadScanner.SmogonThreadScanner"/> keeps these lines when it
+        /// Start of a post until 2026-11-13. <see cref="ThreadScanner.SmogonThreadScanner"/> keeps these lines when it
         /// stores a page, so pages stored before then carry this form.
         /// </summary>
         private const string PostStartUntil20261113 = "<article class=\"message message--post js-post js-inlineModContainer";
 
-        /// <summary>Start of every post since 2026-11-14.</summary>
+        /// <summary>Start of a post since 2026-11-14.</summary>
         private const string PostStart = "<article class=\"message js-post js-inlineModContainer";
 
-        /// <summary>Whether a line, a page or a stored page contains the start of a post, in either markup.</summary>
-        public static bool ContainsPostStart(string html) => html.Contains(PostStart) || html.Contains(PostStartUntil20261113);
+        /// <summary>
+        /// Whether the line opens a post that the scanner counts, in either markup. The first post of an article thread
+        /// ("message message--article js-post") never counted.
+        /// </summary>
+        public static bool IsPostStart(string line) => line.Contains(PostStart) || line.Contains(PostStartUntil20261113);
+
+        // Any post in either markup, the first post of an article thread included.
+        [GeneratedRegex("<article class=\"message [^\"]*\\bjs-post\\b")]
+        private static partial Regex AnyPostStartRegex();
+
+        /// <summary>Whether a page or a stored page contains a post.</summary>
+        public static bool ContainsPost(string html) => AnyPostStartRegex().IsMatch(html);
 
         public const string LockedMarker = "blockStatus-message--locked";
 
@@ -90,7 +100,7 @@ namespace TournamentParser.Util
             {
                 throw new SmogonAccessBlockedException(url);
             }
-            if (!ContainsPostStart(html))
+            if (!ContainsPost(html))
             {
                 throw new UnexpectedPageException(url, "the page contains no posts");
             }
@@ -100,7 +110,7 @@ namespace TournamentParser.Util
         /// Whether a page stored by version 2.x holds real thread content. 2.x also stored bot checks and error pages,
         /// which leave an empty page behind.
         /// </summary>
-        public static bool IsUsableStoredPage(string? storedPage) => storedPage != null && ContainsPostStart(storedPage);
+        public static bool IsUsableStoredPage(string? storedPage) => storedPage != null && ContainsPost(storedPage);
 
         [GeneratedRegex("class=\"pageNav-page[^\"]*\"[^>]*>\\s*<a[^>]*>\\s*(\\d+)\\s*</a>")]
         private static partial Regex PageNavPageRegex();

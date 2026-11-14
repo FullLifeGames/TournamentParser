@@ -567,6 +567,47 @@ namespace TournamentParser.Tests
             Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
         }
 
+        [Test]
+        public void SubforumThatCannotBeRead_StopsTheCrawl()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var alpha = Sub(section, "Tour Alpha", TourAlpha);
+            alpha.Threads.Add(TourThread(1, 1, OldStart));
+            var t2 = TourThread(2, 1, OldStart);
+            section.Threads.Add(t2);
+            Crawl();
+
+            t2.Pages[0].Add(ReplayPost(2, "Cat", 2, Newest()));
+            _forum.Serve(_http);
+            // Changed markup: the listing still links Tour Alpha, in a form the parser does not know.
+            _http.Map(Url(Tournaments), _forum.ListingPage(section, 1).Replace("<h3 class=\"node-title\">", "<h3 class=\"node-title node-title--new\">"));
+
+            var collector = new SmogonThreadCollector(_cache, Options());
+            var error = Assert.Throws<AggregateException>(() => collector.GetGeneralThreadsForForums("Tournaments").Wait())!;
+            Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
+            Assert.That(error.InnerException!.Message, Does.Contain("the subforum " + Url(TourAlpha) + " is linked, but could not be read"));
+        }
+
+        [Test]
+        public void SubforumMovedElsewhere_DropsOutWithoutStoppingTheCrawl()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var alpha = Sub(section, "Tour Alpha", TourAlpha);
+            alpha.Threads.Add(TourThread(1, 1, OldStart));
+            var beta = Sub(section, "Tour Beta", TourBeta);
+            beta.Threads.Add(TourThread(3, 1, OldStart));
+            var t2 = TourThread(2, 1, OldStart);
+            section.Threads.Add(t2);
+            Crawl();
+
+            // Smogon moves closed forums to Cold Storage, outside the scanned sections.
+            section.SubForums.Remove(beta);
+            t2.Pages[0].Add(ReplayPost(2, "Cat", 2, Newest()));
+            var threads = Crawl();
+
+            Assert.That(threads.Keys, Is.EquivalentTo(new[] { Url(Tournaments), Url(TourAlpha) }));
+        }
+
         #region Relevance and search
 
         private static string ThreadSearchUrl(long threadId) => PostSearch.Url(PostSearch.ReplayQuery, PostSearch.Filter.Thread(threadId), null, null);

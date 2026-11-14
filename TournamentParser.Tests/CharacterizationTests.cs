@@ -805,6 +805,25 @@ namespace TournamentParser.Tests
             Assert.That(handler.AutomaticDecompression, Is.EqualTo(System.Net.DecompressionMethods.All));
         }
 
+        [TestCase("\t<article class=\"message message--post js-post js-inlineModContainer  \"", true, true, TestName = "Post until 2026-11-13")]
+        [TestCase("\t<article class=\"message js-post js-inlineModContainer  \"", true, true, TestName = "Post since 2026-11-14")]
+        [TestCase("\t<article class=\"message message--article js-post js-inlineModContainer  \"", true, false, TestName = "First post of an article thread")]
+        [TestCase("\t\t<article class=\"message-body js-selectToQuote\">", false, false, TestName = "Post body")]
+        public void SmogonPages_PostStart(string line, bool isPost, bool countedByTheScanner)
+        {
+            Assert.That(SmogonPages.ContainsPost(line), Is.EqualTo(isPost));
+            Assert.That(SmogonPages.IsPostStart(line), Is.EqualTo(countedByTheScanner));
+        }
+
+        [Test]
+        public void SmogonPages_ArticleThreadWithOnlyItsFirstPost_IsAThreadPage()
+        {
+            const string url = "https://www.smogon.com/forums/threads/x.1/";
+            Assert.DoesNotThrow(() => SmogonPages.EnsureThreadPage(
+                "<html data-template=\"thread_view\">\n\t<article class=\"message message--article js-post js-inlineModContainer  \"\n</html>", url));
+            Assert.Throws<UnexpectedPageException>(() => SmogonPages.EnsureThreadPage("<html data-template=\"thread_view\">\n</html>", url));
+        }
+
         [Test]
         public void SmogonPages_BotCheckIsRecognized()
         {
