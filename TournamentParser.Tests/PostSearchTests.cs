@@ -55,6 +55,19 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void Parse_ResultPageOf20261114_IsReadTheSameWay()
+        {
+            // Smogon changed its forum and thread markup on Nov 14, 2026; search results stayed the same.
+            var hits = SearchResultParser.Parse(Fixture("search-tournaments-replays-2026-11-14-page-1.html"), out var next);
+
+            Assert.That(hits, Has.Count.EqualTo(10));
+            Assert.That(hits, Has.All.Matches<SearchHit>(hit => hit.ThreadId > 0 && hit.PostId > 0 && hit.Position > 0
+                && hit.ForumUrl.StartsWith("https://www.smogon.com/forums/forums/") && hit.PostDate > new DateTime(2026, 11, 13)));
+            Assert.That(hits.Select(hit => hit.PostDate), Is.Ordered.Descending);
+            Assert.That(next, Does.Contain("page=2"));
+        }
+
+        [Test]
         public void Parse_LastPageOfAThreadSearch_HasNoNextPage()
         {
             var hits = SearchResultParser.Parse(Fixture("search-uu-open-xii-r2-replays-2026-11-13-page-8.html"), out var next);

@@ -286,7 +286,7 @@ namespace TournamentParser.Tests.TestSupport
 
         private static void AppendNode(StringBuilder sb, Forum forum, IEnumerable<Forum> subNodeLinks)
         {
-            sb.Append($"\t<div class=\"node node--id{Math.Abs(forum.Path.GetHashCode()) % 1000} node--depth2 node--forum node--unread\">\n");
+            sb.Append($"\t<div class=\"node node--id{Math.Abs(forum.Path.GetHashCode()) % 1000} node--depth2 node--unread\">\n");
             sb.Append("\t\t<div class=\"node-body\">\n");
             sb.Append("\t\t\t\t<h3 class=\"node-title\">\n");
             sb.Append($"\t\t\t\t\t<a href=\"{forum.Path}\" data-xf-init=\"element-tooltip\" data-shortcut=\"node-description\">{WebUtility.HtmlEncode(forum.Title)}</a>\n");
@@ -294,7 +294,7 @@ namespace TournamentParser.Tests.TestSupport
             sb.Append("\t\t<div class=\"node-subNodesFlat\">\n\t\t\t<ol class=\"node-subNodeFlatList\">\n");
             foreach (var subForum in subNodeLinks)
             {
-                sb.Append($"\t<li>\n\t\t<a href=\"{subForum.Path}\" class=\"subNodeLink subNodeLink--forum \">\n");
+                sb.Append($"\t<li>\n\t\t<a href=\"{subForum.Path}\" class=\"subNodeLink subNodeLink--unread\">\n");
                 sb.Append($"\t\t\t<i class=\"fa--xf far fa-comments  subNodeLink-icon\"><svg><use href=\"/icons.svg#comments\"></use></svg></i>{WebUtility.HtmlEncode(subForum.Title)}\n");
                 sb.Append("\t\t</a>\n\t</li>\n");
             }

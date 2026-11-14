@@ -11,16 +11,19 @@ namespace TournamentParser.ThreadCollector
     {
         private const string ThreadItemStart = "<div class=\"structItem structItem--thread";
 
-        [GeneratedRegex("<div class=\"node node--id\\d+ node--depth\\d+ node--(\\w+)")]
+        // Until 2026-11-13 the node type followed ("node--forum", "node--category"); since then only the read state does.
+        // Forums are told apart from categories, link forums and pages by their URL.
+        [GeneratedRegex("<div class=\"node node--id\\d+ node--depth\\d+")]
         private static partial Regex NodeStartRegex();
 
-        [GeneratedRegex("<h3 class=\"node-title\">\\s*<a href=\"([^\"]+)\"[^>]*>([^<]*)</a>")]
+        [GeneratedRegex("<h3 class=\"node-title\">\\s*<a href=\"([^\"]*/forums/forums/[^\"]+)\"[^>]*>([^<]*)</a>")]
         private static partial Regex NodeTitleRegex();
 
         [GeneratedRegex("class=\"node-extra-date[^\"]*\"[^>]*data-timestamp=\"(\\d+)\"")]
         private static partial Regex NodeLatestDateRegex();
 
-        [GeneratedRegex("<a href=\"([^\"]+)\" class=\"subNodeLink subNodeLink--forum[^\"]*\">(.*?)</a>", RegexOptions.Singleline)]
+        // Until 2026-11-13 with the class "subNodeLink--forum"; since then forums are known by their URL only.
+        [GeneratedRegex("<a href=\"([^\"]*/forums/forums/[^\"]+)\" class=\"subNodeLink(?: [^\"]*)?\">(.*?)</a>", RegexOptions.Singleline)]
         private static partial Regex SubNodeLinkRegex();
 
         [GeneratedRegex("<[^>]*>")]
@@ -55,10 +58,6 @@ namespace TournamentParser.ThreadCollector
             var starts = NodeStartRegex().Matches(html);
             for (var i = 0; i < starts.Count; i++)
             {
-                if (starts[i].Groups[1].Value != "forum")
-                {
-                    continue;
-                }
                 var end = i + 1 < starts.Count ? starts[i + 1].Index : html.Length;
                 var block = html[starts[i].Index..end];
                 var title = NodeTitleRegex().Match(block);

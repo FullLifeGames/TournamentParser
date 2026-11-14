@@ -6,7 +6,7 @@ namespace TournamentParser.Tests.TestSupport
 {
     /// <summary>
     /// Builds minimal XenForo-shaped thread pages containing exactly the line
-    /// markers SmogonThreadScanner keys on.
+    /// markers SmogonThreadScanner keys on, in Smogon's markup since 2026-11-14.
     /// </summary>
     public static class SyntheticPages
     {
@@ -43,7 +43,7 @@ namespace TournamentParser.Tests.TestSupport
             foreach (var post in posts)
             {
                 var lowerName = post.Author.ToLower().Replace(" ", "-");
-                sb.Append("\t<article class=\"message message--post js-post js-inlineModContainer  \"\n");
+                sb.Append("\t<article class=\"message js-post js-inlineModContainer  \"\n");
                 sb.Append($"\t\tdata-author=\"{post.Author}\"\n");
                 if (post.PostId > 0)
                 {

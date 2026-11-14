@@ -236,7 +236,7 @@ namespace TournamentParser.ThreadScanner
             {
                 thread.Locked = true;
             }
-            else if (line.Contains("<article class=\"message message--post js-post js-inlineModContainer"))
+            else if (SmogonPages.ContainsPostStart(line))
             {
                 lineDataHandler.PostStarted = true;
                 lineDataHandler.FullPost = new StringBuilder("");

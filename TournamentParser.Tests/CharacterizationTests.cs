@@ -607,6 +607,68 @@ namespace TournamentParser.Tests
                 Is.GreaterThan(100));
         }
 
+        private const string UuOpenUrl = "https://www.smogon.com/forums/threads/the-uu-open-xii-round-2-replays-mandatory-no-exceptions.3721437/";
+
+        /// <summary>The UU Open XII round 2 as saved on 2023-05-15 (posts open with "message message--post") and on 2026-11-14.</summary>
+        private static IList<string> UuOpenPages(bool markupOf20261114) => Enumerable.Range(1, 5)
+            .Select(page => Fixture(markupOf20261114 ? $"uu-open-xii-r2-2026-11-14-page-{page}.html" : $"uu-open-xii-r2-page-{page}.html"))
+            .ToList();
+
+        /// <summary>Every user with id, profile link and matches.</summary>
+        private static List<string> ScanSummary(SmogonThreadScanner scanner) => scanner.NameUserTranslation
+            .OrderBy(kv => kv.Key)
+            .Select(kv => $"{kv.Key} #{kv.Value.Id} {kv.Value.ProfileLink}: " + string.Join(" | ", kv.Value.Matches
+                .Select(m => $"{m.FirstUser} vs {m.SecondUser} w={m.Winner} f={m.Finished} r={string.Join(",", m.Replays.OrderBy(r => r))} t={m.Thread?.Name}")
+                .OrderBy(match => match)))
+            .ToList();
+
+        private static SmogonThreadScanner ScanUuOpen(IList<string> pages)
+        {
+            var fake = new FakeHttpMessageHandler();
+            for (var page = 1; page <= pages.Count; page++)
+            {
+                fake.Map(SmogonPages.PageUrl(UuOpenUrl, page), pages[page - 1]);
+            }
+            Common.HttpClient = new HttpClient(fake);
+            var scanner = new SmogonThreadScanner();
+            Assert.That(scanner.AnalyzeTopic(UuOpenUrl, CancellationToken.None).Result, Is.Not.Null, "the scan must not fail");
+            return scanner;
+        }
+
+        private static SmogonThreadScanner ScanStored(IList<string> storedPages)
+        {
+            var scanner = new SmogonThreadScanner();
+            scanner.AnalyzeTopic(UuOpenUrl, storedPages, CancellationToken.None).Wait();
+            return scanner;
+        }
+
+        [Test]
+        public void UuOpenFixture_MarkupOf20261114_GivesTheSameUsersAndMatches()
+        {
+            // Since Nov 14, 2026 posts open with <article class="message js-post ...">; the thread is the same.
+            var before = ScanSummary(ScanUuOpen(UuOpenPages(markupOf20261114: false)));
+
+            var now = ScanSummary(ScanUuOpen(UuOpenPages(markupOf20261114: true)));
+
+            Assert.That(before.Count(line => !line.EndsWith(": ")), Is.GreaterThan(100), "users with matches");
+            Assert.That(now, Is.EqualTo(before));
+        }
+
+        [Test]
+        public void StoredPagesOfBothMarkups_GiveTheSameMatchesAsPagesOfOne()
+        {
+            // A thread stored before Nov 14, 2026 gets its later pages in the new markup.
+            var old = UuOpenPages(markupOf20261114: false);
+            var now = UuOpenPages(markupOf20261114: true);
+            var storedOld = old.Select((html, i) => SmogonThreadScanner.ExtractImportantLines(UuOpenUrl, i + 1, html)).ToList();
+            var storedMixed = Enumerable.Range(0, 5)
+                .Select(i => SmogonThreadScanner.ExtractImportantLines(UuOpenUrl, i + 1, i < 3 ? old[i] : now[i]))
+                .ToList();
+
+            Assert.That(storedMixed, Has.All.Matches<string>(SmogonPages.IsUsableStoredPage), "stored pages of both markups are usable");
+            Assert.That(ScanSummary(ScanStored(storedMixed)), Is.EqualTo(ScanSummary(ScanStored(storedOld))));
+        }
+
         #endregion
 
         #region Collector
@@ -636,17 +698,20 @@ namespace TournamentParser.Tests
             Assert.That(fake.Requests, Has.All.StartWith("https://"));
         }
 
-        [Test]
-        public void ForumIndexFixture_FindsTheScannedSectionsByTheirNodes()
+        [TestCase("forum-index-2026-11-08.html", 1794154379)]
+        [TestCase("forum-index-2026-11-14.html", 1794671071)]
+        public void ForumIndexFixture_FindsTheScannedSectionsByTheirNodes(string fixture, long tournamentsLatestPost)
         {
-            // The forum index of Nov 8, 2026. The text marker ">Tournaments<" used to match a thread prefix first, which
-            // pulled VGC, BSS, TCG and Bug Reports into the tournament forums; "Battle Stadium" no longer exists.
-            var index = Fixture("forum-index-2026-11-08.html");
+            // The text marker ">Tournaments<" used to match a thread prefix first, which pulled VGC, BSS, TCG and Bug Reports
+            // into the tournament forums; "Battle Stadium" no longer exists. Since Nov 14, 2026 the nodes and subforum links
+            // no longer name their type ("node--forum", "subNodeLink--forum").
+            var index = Fixture(fixture);
 
             var nodes = ForumPageParser.ParseNodes(index);
+            Assert.That(nodes, Has.Count.EqualTo(24), "25 nodes, one of them the category Thread Cryonics");
             var tournaments = nodes.Single(node => node.Title == "Tournaments");
             Assert.That(tournaments.Url, Is.EqualTo("https://www.smogon.com/forums/forums/tournaments.34/"));
-            Assert.That(tournaments.LatestPostTimestamp, Is.EqualTo(1794154379));
+            Assert.That(tournaments.LatestPostTimestamp, Is.EqualTo(tournamentsLatestPost));
             Assert.That(nodes.Single(node => node.Title == "Smogon Metagames").Url, Is.EqualTo("https://www.smogon.com/forums/forums/smogon-metagames.725/"));
             Assert.That(nodes.Single(node => node.Title == "Ruins of Alph").LatestPostTimestamp, Is.GreaterThan(0));
             Assert.That(nodes.Select(node => node.Title), Does.Contain("Pokémon Showdown!"), "HTML entities are decoded");
@@ -656,22 +721,36 @@ namespace TournamentParser.Tests
             Assert.That(links.Single(link => link.Title == "Battle Stadium Singles").Url,
                 Is.EqualTo("https://www.smogon.com/forums/forums/battle-stadium-singles.532/"));
             Assert.That(links.Select(link => link.Url), Has.None.Contains("/link-forums/"), "link forums are skipped");
+            Assert.That(links, Has.Count.EqualTo(506), "every subforum link, without the 78 link forums and 5 categories");
         }
 
-        [Test]
-        public void ForumListingFixture_ParsesThreadsAndSubforums()
+        [TestCase("tournaments-listing-2026-11-08-page-1.html", 1794167746, 52, 13)]
+        [TestCase("tournaments-listing-2026-11-14-page-1.html", 1794670472, 51, 12)]
+        public void ForumListingFixture_ParsesThreadsAndSubforums(string fixture, long circuitsLatestPost, int threadCount, int stickies)
         {
-            var listing = Fixture("tournaments-listing-2026-11-08-page-1.html");
+            var listing = Fixture(fixture);
 
             var subForums = ForumPageParser.ParseNodes(listing);
             Assert.That(subForums, Has.Count.EqualTo(12));
             var circuits = subForums.Single(node => node.Title == "Circuit Tournaments");
             Assert.That(circuits.Url, Is.EqualTo("https://www.smogon.com/forums/forums/circuit-tournaments.351/"));
-            Assert.That(circuits.LatestPostTimestamp, Is.EqualTo(1794167746));
+            Assert.That(circuits.LatestPostTimestamp, Is.EqualTo(circuitsLatestPost));
 
             var threads = ForumPageParser.ParseThreads(listing);
-            Assert.That(threads, Has.Count.EqualTo(52), "53 items, one of them a moved-thread redirect");
-            Assert.That(threads.TakeWhile(thread => thread.Sticky).Count(), Is.EqualTo(13));
+            Assert.That(threads, Has.Count.EqualTo(threadCount), "all items but one, a moved-thread redirect");
+            Assert.That(threads.TakeWhile(thread => thread.Sticky).Count(), Is.EqualTo(stickies));
+            Assert.That(threads.Skip(stickies).Where(thread => thread.Sticky), Is.Empty);
+            Assert.That(threads.Select(thread => thread.Title), Has.None.Contains("&#039;").And.None.Contains("&amp;"));
+            Assert.That(threads.Where(thread => !thread.Sticky).Select(thread => thread.LatestPostTimestamp),
+                Is.Ordered.Descending, "listings are sorted by latest post");
+            Assert.That(threads.Max(thread => thread.LastPage), Is.GreaterThan(1), "page jumps give the last page");
+        }
+
+        [Test]
+        public void ForumListingFixture_ParsesAThreadItem()
+        {
+            var threads = ForumPageParser.ParseThreads(Fixture("tournaments-listing-2026-11-08-page-1.html"));
+
             var first = threads[0];
             Assert.That(first.ThreadId, Is.EqualTo(3788984));
             Assert.That(first.Url, Is.EqualTo("https://www.smogon.com/forums/threads/programming-note-for-hosts-images-in-tournament-ops.3788984/"));
@@ -679,10 +758,6 @@ namespace TournamentParser.Tests
             Assert.That(first.Locked, Is.True);
             Assert.That(first.LatestPostTimestamp, Is.EqualTo(1790547298));
             Assert.That(first.LatestPostDisplayDate, Is.EqualTo("Sep 27, 2026 at 6:14 PM"));
-            Assert.That(threads.Select(thread => thread.Title), Has.None.Contains("&#039;").And.None.Contains("&amp;"));
-            Assert.That(threads.Where(thread => !thread.Sticky).Select(thread => thread.LatestPostTimestamp),
-                Is.Ordered.Descending, "listings are sorted by latest post");
-            Assert.That(threads.Max(thread => thread.LastPage), Is.GreaterThan(1), "page jumps give the last page");
         }
 
         [Test]

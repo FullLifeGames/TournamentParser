@@ -45,8 +45,17 @@ namespace TournamentParser.Util
 
     internal static partial class SmogonPages
     {
-        /// <summary>Start of every post; <see cref="ThreadScanner.SmogonThreadScanner"/> keeps these lines when it stores a page.</summary>
-        public const string PostMarker = "<article class=\"message message--";
+        /// <summary>
+        /// Start of every post until 2026-11-13. <see cref="ThreadScanner.SmogonThreadScanner"/> keeps these lines when it
+        /// stores a page, so pages stored before then carry this form.
+        /// </summary>
+        private const string PostStartUntil20261113 = "<article class=\"message message--post js-post js-inlineModContainer";
+
+        /// <summary>Start of every post since 2026-11-14.</summary>
+        private const string PostStart = "<article class=\"message js-post js-inlineModContainer";
+
+        /// <summary>Whether a line, a page or a stored page contains the start of a post, in either markup.</summary>
+        public static bool ContainsPostStart(string html) => html.Contains(PostStart) || html.Contains(PostStartUntil20261113);
 
         public const string LockedMarker = "blockStatus-message--locked";
 
@@ -81,7 +90,7 @@ namespace TournamentParser.Util
             {
                 throw new SmogonAccessBlockedException(url);
             }
-            if (!html.Contains(PostMarker))
+            if (!ContainsPostStart(html))
             {
                 throw new UnexpectedPageException(url, "the page contains no posts");
             }
@@ -91,7 +100,7 @@ namespace TournamentParser.Util
         /// Whether a page stored by version 2.x holds real thread content. 2.x also stored bot checks and error pages,
         /// which leave an empty page behind.
         /// </summary>
-        public static bool IsUsableStoredPage(string? storedPage) => storedPage != null && storedPage.Contains(PostMarker);
+        public static bool IsUsableStoredPage(string? storedPage) => storedPage != null && ContainsPostStart(storedPage);
 
         [GeneratedRegex("class=\"pageNav-page[^\"]*\"[^>]*>\\s*<a[^>]*>\\s*(\\d+)\\s*</a>")]
         private static partial Regex PageNavPageRegex();
