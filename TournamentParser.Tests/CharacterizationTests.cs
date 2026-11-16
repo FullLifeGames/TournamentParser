@@ -231,6 +231,62 @@ namespace TournamentParser.Tests
             Assert.That(bob.Matches.Select(m => m), Does.Contain(replayMatch));
         }
 
+        /// <summary>
+        /// Scans a thread whose first post pairs Alice with each of <paramref name="opponents"/>, followed by one post of Alice per
+        /// entry of <paramref name="replayPosts"/>, each with a replay. Alice has more than one pairing and her posts do not name
+        /// her, so every replay post becomes a new match against a user the post mentions. Returns that user per post.
+        /// </summary>
+        private static List<string?> OpponentsOfReplayPosts(string[] opponents, params string[] replayPosts)
+        {
+            const string url = "https://www.smogon.com/forums/threads/replay-tour.4343/";
+            var posts = new List<SyntheticPages.Post>
+            {
+                new() { Author = "TourHost", UserId = 900, BodyLines = opponents.Select(o => "Alice vs. " + o).ToList() },
+            };
+            for (var i = 0; i < replayPosts.Length; i++)
+            {
+                posts.Add(new SyntheticPages.Post
+                {
+                    Author = "Alice",
+                    UserId = 901,
+                    BodyLines = { replayPosts[i], $"<a href=\"https://replay.pokemonshowdown.com/gen9ou-{i + 2}\">replay</a>" },
+                });
+            }
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(url, SyntheticPages.ThreadPage("Replay Tour", posts));
+            Common.HttpClient = new HttpClient(fake);
+
+            var scanner = new SmogonThreadScanner();
+            Assert.That(scanner.AnalyzeTopic(url, CancellationToken.None).Result, Is.Not.Null);
+            var alice = scanner.NameUserTranslation["alice"];
+            return Enumerable.Range(0, replayPosts.Length)
+                .Select(i => alice.Matches.Single(m => m.Replays.Contains($"https://replay.pokemonshowdown.com/gen9ou-{i + 2}")).SecondUser)
+                .ToList();
+        }
+
+        [Test]
+        public void ReplayPostOutsideThePairings_OpponentIsTheUserNamedFirst_TheLongerNameOnTheSamePosition()
+        {
+            var opponents = OpponentsOfReplayPosts(["Bob", "Bobby", "Carol"],
+                "gg to Carol, then Bob today",
+                "lost to Bobby and Bob today",
+                "lost to Bob and Bobby today");
+
+            // In the second post "bob" is first found at the start of "bobby", the same position, so the longer name wins
+            Assert.That(opponents, Is.EqualTo(new[] { "carol", "bobby", "bob" }));
+        }
+
+        [Test]
+        public void ReplayPostOutsideThePairings_FindsAnOpponentByTheNameWithSpaces()
+        {
+            var opponents = OpponentsOfReplayPosts(["Ash Ketchum", "Carol"],
+                "gg Ash Ketchum, well played",
+                "beat Carol, then Ash Ketchum today");
+
+            // Named only with its space, "ashketchum" is not found in the post (position -1) and so comes before "carol"
+            Assert.That(opponents, Is.EqualTo(new[] { "ashketchum", "ashketchum" }));
+        }
+
         [Test]
         public void SyntheticScan_TopicAnalyzeResult_PinsPagesLinksAndLastPost()
         {
