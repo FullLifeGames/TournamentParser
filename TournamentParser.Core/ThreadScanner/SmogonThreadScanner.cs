@@ -39,6 +39,16 @@ namespace TournamentParser.ThreadScanner
 
         private readonly RegexUtil _regexUtil = new();
 
+        /// <summary>
+        /// <see cref="UserWithSpaceTranslation"/> the other way round, for the names with spaces that differ from the user name:
+        /// name with spaces → user names. With it <see cref="FindClosestMentionedUser"/> looks the words of a post up instead
+        /// of trying every known user.
+        /// </summary>
+        private readonly ConcurrentDictionary<string, ConcurrentBag<string>> _userNamesBySpacedName = new();
+
+        /// <summary>The word counts of the keys of <see cref="_userNamesBySpacedName"/>, each once.</summary>
+        private readonly ConcurrentDictionary<int, byte> _spacedNameWordCounts = new();
+
         private const string ShowdownReplayString = "replay.pokemonshowdown.com/";
 
         /// <summary>
@@ -420,7 +430,7 @@ namespace TournamentParser.ThreadScanner
                 {
                     Users.Add(firstUser);
                 }
-                UserWithSpaceTranslation.TryAdd(regexUserOne, _regexUtil.RegexWithSpace(userOne));
+                AddUserWithSpace(regexUserOne, _regexUtil.RegexWithSpace(userOne));
             }
             firstUser.Matches.Add(match);
             if (currentlyUserToMatch.TryGetValue(regexUserOne, out var userOneMatches))
@@ -458,7 +468,7 @@ namespace TournamentParser.ThreadScanner
                 {
                     Users.Add(secondUser);
                 }
-                UserWithSpaceTranslation.TryAdd(regexUserTwo, _regexUtil.RegexWithSpace(userTwo));
+                AddUserWithSpace(regexUserTwo, _regexUtil.RegexWithSpace(userTwo));
             }
             secondUser.Matches.Add(match);
             if (currentlyUserToMatch.TryGetValue(regexUserTwo, out var userTwoMatches))
@@ -589,7 +599,7 @@ namespace TournamentParser.ThreadScanner
                         }
                         currentUser = newUser;
 
-                        UserWithSpaceTranslation.TryAdd(postedByRegex, _regexUtil.RegexWithSpace(lineDataHandler.PostedBy));
+                        AddUserWithSpace(postedByRegex, _regexUtil.RegexWithSpace(lineDataHandler.PostedBy));
                         IdUserTranslation.TryAdd(lineDataHandler.DataUserId, newUser);
                     }
                     else
@@ -626,7 +636,7 @@ namespace TournamentParser.ThreadScanner
                                 return existingUserData;
                             }
                         );
-                            UserWithSpaceTranslation.TryAdd(postedByRegex, _regexUtil.RegexWithSpace(lineDataHandler.PostedBy));
+                            AddUserWithSpace(postedByRegex, _regexUtil.RegexWithSpace(lineDataHandler.PostedBy));
                         }
                         else
                         {
@@ -681,30 +691,12 @@ namespace TournamentParser.ThreadScanner
                                 Finished = true,
                             };
 
-                            // Order by name length of the users so that short common terms are ignored longer and bigger names can be respected
-                            var closest = int.MaxValue;
                             User? closestUser = null;
                             if (match.FirstUser is not null
                                 && NameUserTranslation.TryGetValue(match.FirstUser, out User? postingUser)
                                 && postingUser.Name is not null)
                             {
-                                foreach (var user in Users.OrderByDescending(u => u.Name?.Length))
-                                {
-                                    if (user != postingUser && UserMentionedInPost(user, postTokens, regexWithSpaceFullPost))
-                                    {
-                                        var closeIndex = regexWithSpaceFullPost.IndexOf(user?.Name ?? "notdefined");
-                                        if (closest > closeIndex)
-                                        {
-                                            closest = closeIndex;
-                                            closestUser = user;
-                                        }
-                                        if (closest == -1)
-                                        {
-                                            // IndexOf can never return less than -1, so the result is settled.
-                                            break;
-                                        }
-                                    }
-                                }
+                                closestUser = FindClosestMentionedUser(postingUser, postTokens, regexWithSpaceFullPost);
                             }
 
                             if (closestUser is not null)
@@ -769,6 +761,72 @@ namespace TournamentParser.ThreadScanner
                 innerTokens.Add(tokens[i]);
             }
             return innerTokens;
+        }
+
+        private void AddUserWithSpace(string userName, string nameWithSpace)
+        {
+            if (UserWithSpaceTranslation.TryAdd(userName, nameWithSpace) && nameWithSpace != userName)
+            {
+                _userNamesBySpacedName.GetOrAdd(nameWithSpace, _ => []).Add(userName);
+                _spacedNameWordCounts.TryAdd(nameWithSpace.Split(' ').Length, 0);
+            }
+        }
+
+        /// <summary>
+        /// The opponent of a replay post that fits none of the poster's pairings: of the users the post mentions
+        /// (<see cref="UserMentionedInPost"/>) other than the poster, the one whose name comes first in the post, on the same
+        /// position the one with the longer name. A user mentioned only by the name with spaces is not found in the post
+        /// (position -1) and so comes first; the earlier search, which tried every known user from the longest name down,
+        /// ranked them the same way.
+        /// </summary>
+        /// <param name="postTokens">The inner tokens of <paramref name="post"/>, see <see cref="GetInnerTokens"/>.</param>
+        private User? FindClosestMentionedUser(User postingUser, HashSet<string> postTokens, string post)
+        {
+            var mentioned = new HashSet<User>(ReferenceEqualityComparer.Instance);
+            foreach (var token in postTokens)
+            {
+                if (NameUserTranslation.TryGetValue(token, out var user) && user.Name == token)
+                {
+                    mentioned.Add(user);
+                }
+            }
+
+            // " " + name with spaces + " " in the post: the name's words are tokens start..start+words-1, with a token on either side
+            string[]? tokens = null;
+            foreach (var (words, _) in _spacedNameWordCounts)
+            {
+                tokens ??= post.Split(' ');
+                for (var start = 1; start + words < tokens.Length; start++)
+                {
+                    if (_userNamesBySpacedName.TryGetValue(string.Join(' ', tokens, start, words), out var userNames))
+                    {
+                        foreach (var userName in userNames)
+                        {
+                            if (NameUserTranslation.TryGetValue(userName, out var user) && user.Name == userName)
+                            {
+                                mentioned.Add(user);
+                            }
+                        }
+                    }
+                }
+            }
+
+            User? closest = null;
+            var closestIndex = int.MaxValue;
+            foreach (var user in mentioned)
+            {
+                if (user == postingUser)
+                {
+                    continue;
+                }
+                var index = post.IndexOf(user.Name!);
+                if (index < closestIndex || (index == closestIndex && user.Name!.Length > closest!.Name!.Length))
+                {
+                    closest = user;
+                    closestIndex = index;
+                }
+            }
+            return closest;
         }
 
         private bool UserMentionedInPost(User compareUser, HashSet<string> postTokens, string regexWithSpaceFullPost)
