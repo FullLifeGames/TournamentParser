@@ -16,7 +16,23 @@ Compile and use the command line application of the `TournamentParser.Cmd` proje
 TournamentParser.Cmd [--full] [--no-search] [--delay <seconds>] [--recent-days <days>] [--max-requests <count>] [--headed]
 ```
 
-It scans the forums Tournaments, PS! Tournaments, Smogon Metagames, Ruins of Alph and Battle Stadium Singles, each with its subforums, and writes `output.txt`, `output.json` and `users/*.json`.
+It scans the forums Tournaments, PS! Tournaments, Smogon Metagames, Ruins of Alph and Battle Stadium Singles, each with its subforums, and writes `output.txt`, `output.json`, `users/*.json` and `forums.json`.
+
+`forums.json` tells which forum every known thread sits in and how the forums nest. It is taken from the crawl state, without further requests:
+
+```json
+{
+  "forums": {
+    "tournaments.34": { "u": "https://www.smogon.com/forums/forums/tournaments.34/", "p": null, "n": "Tournaments" },
+    "smogon-premier-league.130": { "u": "https://www.smogon.com/forums/forums/smogon-premier-league.130/", "p": "tournaments.34", "n": null }
+  },
+  "threads": { "3593744": "smogon-premier-league.130" }
+}
+```
+
+- A forum's key is the last path segment of its URL (`tournaments.34`, or `gen1` for a forum without node ID). `u` is the forum URL, `p` the key of the parent forum (null for the five scanned forums), `n` the title as Smogon shows it. A title is stored when a node list shows the forum (the forum index, or the listing of its parent forum); until a run of version 3.1 or later has read one, `n` is null.
+- `threads` maps every thread ID that a listing of these forums showed to the forum it sits in. A thread that two forums still list was moved; it sits in the forum whose listing showed it last.
+- The file is written as a whole: first to `forums.json.tmp`, which then replaces `forums.json`, so a reader never sees half of it.
 
 The crawl state is kept in `SmogonTournamentParser.db` in the working directory. Keep that file between runs:
 

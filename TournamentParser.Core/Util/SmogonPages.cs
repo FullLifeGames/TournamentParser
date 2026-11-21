@@ -145,6 +145,13 @@ namespace TournamentParser.Util
         [GeneratedRegex("\\.(\\d+)/?$")]
         private static partial Regex NodeIdRegex();
 
+        /// <summary>The last path segment of a forum URL (".../forums/tournaments.34/" is "tournaments.34", ".../forums/gen1/" is "gen1").</summary>
+        public static string GetForumKey(string forumUrl)
+        {
+            var path = forumUrl.TrimEnd('/');
+            return path[(path.LastIndexOf('/') + 1)..];
+        }
+
         /// <summary>The node ID of a forum URL (".../forums/tournaments.34/" is 34), null if there is none (".../forums/gen1/").</summary>
         public static long? GetForumId(string forumUrl)
         {
