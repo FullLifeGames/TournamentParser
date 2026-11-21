@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Caching.Distributed;
+using TournamentParser.Data;
 using TournamentParser.Finalizer;
 using TournamentParser.ThreadCollector;
 using TournamentParser.ThreadScanner;
@@ -31,5 +32,11 @@ namespace TournamentParser.Parser
         public override IThreadScanner ThreadScanner => _smogonThreadScanner;
 
         public override IFinalizer Finalizer => new SmogonFinalizer();
+
+        /// <summary>
+        /// The scanned forums, how they nest and the forum every known thread sits in, from the crawl state without requests.
+        /// Call it after <see cref="Parser.GetMatchesForUsers"/>; see <see cref="SmogonThreadCollector.GetForumTree"/>.
+        /// </summary>
+        public ForumTree GetForumTree() => _smogonThreadCollector.GetForumTree();
     }
 }

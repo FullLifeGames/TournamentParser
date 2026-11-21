@@ -109,6 +109,14 @@ try
             serializer.Serialize(file, user.Value);
         }
     }
+
+    // which forum every known thread sits in; written to a temporary file and moved, so that a reader never sees half of it
+    using (var file = File.CreateText("forums.json.tmp"))
+    {
+        var serializer = new JsonSerializer();
+        serializer.Serialize(file, tournament.GetForumTree());
+    }
+    File.Move("forums.json.tmp", "forums.json", overwrite: true);
     return 0;
 }
 catch (Exception e) when (e is SmogonAccessBlockedException or UnexpectedPageException)

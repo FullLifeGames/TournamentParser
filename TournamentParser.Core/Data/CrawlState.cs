@@ -70,6 +70,12 @@ namespace TournamentParser.Data
 
         /// <summary>URLs of the direct subforums, as listed on the forum's first page.</summary>
         public List<string> SubForums { get; set; } = [];
+
+        /// <summary>
+        /// The title of the forum as the last node list that showed it gave it (the forum index, or the parent forum's listing);
+        /// null until a node list showed it.
+        /// </summary>
+        public string? Title { get; set; }
     }
 
     /// <summary>What the crawler remembers about a thread between runs. The page contents are stored separately.</summary>

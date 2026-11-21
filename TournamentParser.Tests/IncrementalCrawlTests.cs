@@ -1144,6 +1144,133 @@ namespace TournamentParser.Tests
 
         #endregion
 
+        #region Forum tree
+
+        /// <summary>One run of a collector over the given sections, one call each as SmogonParser makes them; returns the forum tree after it.</summary>
+        private ForumTree CrawlTree(params string[] sections)
+        {
+            _forum.Serve(_http);
+            _http.ClearRequests();
+            var collector = new SmogonThreadCollector(_cache, Options());
+            foreach (var section in sections)
+            {
+                collector.GetGeneralThreadsForForums(section).Wait();
+            }
+            var requests = _http.Requests.Count;
+            var tree = collector.GetForumTree();
+            Assert.That(_http.Requests, Has.Count.EqualTo(requests), "the tree comes from the crawl state alone");
+            return tree;
+        }
+
+        private ForumCrawlState StoredForum(string path) =>
+            JsonConvert.DeserializeObject<ForumCrawlState>(Encoding.UTF8.GetString(_cache.Store["tp:v3:forum:" + Url(path)]))!;
+
+        [Test]
+        public void ForumTree_NestsTheForums_AndPlacesEveryThreadInItsForum()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var alpha = Sub(section, "Tour Alpha", TourAlpha);
+            var gen1 = Sub(alpha, "RBY & GSC", "/forums/forums/gen1/");
+            section.Threads.Add(TourThread(1, 1, OldStart));
+            alpha.Threads.Add(TourThread(2, 1, OldStart));
+            alpha.Threads.Add(ChatThread(3, 1, OldStart));
+            gen1.Threads.Add(TourThread(4, 2, OldStart));
+
+            var tree = CrawlTree("Tournaments");
+
+            Assert.That(JsonConvert.SerializeObject(tree), Is.EqualTo(
+                "{\"forums\":{"
+                + "\"gen1\":{\"u\":\"https://www.smogon.com/forums/forums/gen1/\",\"p\":\"tour-alpha.100\",\"n\":\"RBY & GSC\"},"
+                + "\"tour-alpha.100\":{\"u\":\"https://www.smogon.com/forums/forums/tour-alpha.100/\",\"p\":\"tournaments.34\",\"n\":\"Tour Alpha\"},"
+                + "\"tournaments.34\":{\"u\":\"https://www.smogon.com/forums/forums/tournaments.34/\",\"p\":null,\"n\":\"Tournaments\"}},"
+                + "\"threads\":{\"1\":\"tournaments.34\",\"2\":\"tour-alpha.100\",\"3\":\"tour-alpha.100\",\"4\":\"gen1\"}}"));
+        }
+
+        [Test]
+        public void ForumTree_TitleOfAForumNoNodeListShowed_StaysUnknownUntilOneShowsIt()
+        {
+            var section = Section("Tournaments", Tournaments);
+            var alpha = Sub(section, "Tour Alpha", TourAlpha);
+            var archive = Sub(alpha, "Tour Alpha Archive", "/forums/forums/tour-alpha-archive.102/");
+            var t1 = TourThread(1, 1, OldStart);
+            section.Threads.Add(t1);
+            var t2 = TourThread(2, 1, OldStart);
+            archive.Threads.Add(t2);
+            Crawl();
+            // The crawl state of version 3.0 holds no titles.
+            foreach (var key in _cache.Store.Keys.Where(key => key.StartsWith("tp:v3:forum:")).ToList())
+            {
+                var state = JsonConvert.DeserializeObject<ForumCrawlState>(Encoding.UTF8.GetString(_cache.Store[key]))!;
+                state.Title = null;
+                _cache.Store[key] = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(state));
+            }
+
+            t1.Pages[0].Add(ReplayPost(1, "Cat", 2, Newest()));
+            var tree = CrawlTree("Tournaments");
+
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch, Url(Tournaments), t1.Url }),
+                "Tour Alpha and its subforum are unchanged");
+            Assert.That(tree.Forums["tournaments.34"].Title, Is.EqualTo("Tournaments"), "the forum index shows it");
+            Assert.That(tree.Forums["tour-alpha.100"].Title, Is.EqualTo("Tour Alpha"), "the listing of Tournaments shows it");
+            Assert.That(tree.Forums["tour-alpha-archive.102"].Title, Is.Null, "only the listing of Tour Alpha shows it");
+            Assert.That(tree.Forums["tour-alpha-archive.102"].Parent, Is.EqualTo("tour-alpha.100"));
+            Assert.That(tree.Threads[2], Is.EqualTo("tour-alpha-archive.102"));
+
+            t2.Pages[0].Add(ReplayPost(2, "Cat", 2, Newest()));
+            tree = CrawlTree("Tournaments");
+
+            Assert.That(tree.Forums["tour-alpha-archive.102"].Title, Is.EqualTo("Tour Alpha Archive"));
+        }
+
+        [Test]
+        public void ForumTree_ThreadListedInTwoForums_SitsInTheForumThatListedItLast()
+        {
+            var tournaments = Section("Tournaments", Tournaments);
+            var alpha = Sub(tournaments, "Tour Alpha", TourAlpha);
+            var metagames = Section("Smogon Metagames", "/forums/forums/smogon-metagames.725/");
+            var circuits = Sub(metagames, "Circuits", "/forums/forums/circuits.474/");
+            var moved = TourThread(1, 1, OldStart.AddDays(1));
+            alpha.Threads.Add(moved);
+            alpha.Threads.Add(TourThread(2, 1, OldStart.AddDays(2)));
+            circuits.Threads.Add(TourThread(3, 1, OldStart));
+            CrawlTree("Tournaments", "Smogon Metagames");
+
+            // Tour Alpha's latest post stays the same, so it is not listed and keeps the thread in its list; the forum of the
+            // second call lists it.
+            alpha.Threads.Remove(moved);
+            circuits.Threads.Add(moved);
+            var tree = CrawlTree("Tournaments", "Smogon Metagames");
+
+            Assert.That(StoredForum(TourAlpha).Threads.Keys, Has.Member(1L));
+            Assert.That(StoredForum("/forums/forums/circuits.474/").Threads.Keys, Has.Member(1L));
+            Assert.That(tree.Threads[1], Is.EqualTo("circuits.474"));
+            Assert.That(tree.Threads[2], Is.EqualTo("tour-alpha.100"));
+
+            tree = CrawlTree("Tournaments", "Smogon Metagames");
+            Assert.That(StoredForum(TourAlpha).Threads.Keys, Has.No.Member(1L), "the next run drops it from Tour Alpha");
+            Assert.That(tree.Threads[1], Is.EqualTo("circuits.474"));
+        }
+
+        [Test]
+        public void ForumTree_ThreadListedInTwoForumsWithoutState_SitsInTheForumReachedFirst()
+        {
+            var store = new CrawlStateStore(_cache);
+            var threadUrl = Url("/forums/threads/gone.7/");
+            store.SetForum(Url(Tournaments), new ForumCrawlState { Threads = { [7] = threadUrl }, SubForums = { Url(TourAlpha) } });
+            store.SetForum(Url(TourAlpha), new ForumCrawlState { Threads = { [7] = threadUrl, [8] = threadUrl } });
+            store.SetForum(Url(TourBeta), new ForumCrawlState { Threads = { [7] = threadUrl } });
+            store.SetThread(8, new ThreadCrawlState { Url = threadUrl, ForumUrl = Url(TourBeta) });
+
+            var tree = SmogonThreadCollector.BuildForumTree(store, [Url(TourBeta), Url(Tournaments)]);
+
+            Assert.That(tree.Forums.Keys, Is.EquivalentTo(new[] { "tour-beta.101", "tournaments.34", "tour-alpha.100" }));
+            Assert.That(tree.Forums["tour-beta.101"].Parent, Is.Null);
+            Assert.That(tree.Threads[7], Is.EqualTo("tour-beta.101"), "without a state, the first forum in walk order");
+            Assert.That(tree.Threads[8], Is.EqualTo("tour-alpha.100"), "the only forum that lists it, whatever its state says");
+        }
+
+        #endregion
+
         #region Whole parser
 
         private void StandardSections()
@@ -1185,6 +1312,29 @@ namespace TournamentParser.Tests
             // Forums without a latest post on the index (subforum links) are listed (and searched) every run.
             Assert.That(_http.Requests, Is.EquivalentTo(new[] { FakeForum.IndexUrl, SearchUrl(698), ps.Url, SearchUrl(532), bss.Url }));
             Assert.That(again.Keys, Is.EquivalentTo(users.Keys));
+        }
+
+        [Test]
+        public void SmogonParser_ForumTree_StartsAtTheScannedForums()
+        {
+            StandardSections();
+            _forum.AllForums.Single(f => f.Title == "PS! Tournaments").Threads.Add(TourThread(2, 1, OldStart));
+            _forum.AllForums.Single(f => f.Title == "Video Game Championships").Threads.Add(TourThread(4, 1, OldStart));
+            _forum.Serve(_http);
+
+            var parser = new SmogonParser(_cache, Options());
+            parser.GetMatchesForUsers().Wait();
+            var tree = parser.GetForumTree();
+
+            Assert.That(tree.Forums.Keys, Is.EquivalentTo(new[]
+            {
+                "tournaments.34", "ps-tournaments.698", "smogon-metagames.725", "ruins-of-alph.31", "battle-stadium-singles.532",
+            }));
+            Assert.That(tree.Forums.Values.Select(forum => forum.Parent), Has.All.Null);
+            Assert.That(tree.Forums["ps-tournaments.698"].Title, Is.EqualTo("PS! Tournaments"), "the index links it below Pokémon Showdown!");
+            Assert.That(tree.Forums["battle-stadium-singles.532"].Title, Is.EqualTo("Battle Stadium Singles"));
+            Assert.That(tree.Threads.Keys, Is.EqualTo(new[] { 2L }), "VGC is not scanned");
+            Assert.That(tree.Threads[2], Is.EqualTo("ps-tournaments.698"));
         }
 
         #endregion

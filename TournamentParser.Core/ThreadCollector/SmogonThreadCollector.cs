@@ -56,6 +56,8 @@ namespace TournamentParser.ThreadCollector
         // A collector instance is one run: forums and threads are handled once, even if several calls reach them.
         private readonly HashSet<string> _visitedForums = [];
         private readonly HashSet<long> _returnedThreads = [];
+        // The forums the calls started at, in call order: the tops of the forum tree.
+        private readonly List<string> _roots = [];
         private string? _forumIndex;
         private int _unexpectedThreadPagesInARow;
         private bool _searchUnavailable;
@@ -100,6 +102,62 @@ namespace TournamentParser.ThreadCollector
             string filter, IDictionary<string, string>? additionals = null) =>
             CollectAsync([filter], additionals);
 
+        /// <summary>
+        /// The forum tree of this collector's calls, from the crawl state alone (no requests); call it after the run. Its tops are
+        /// the forums the calls started at; below them are the subforums as their parents' listings showed them last, and every
+        /// thread that one of these listings showed sits in that forum. A thread that two forums list was moved: it sits in the
+        /// forum whose listing showed it last (<see cref="ThreadCrawlState.ForumUrl"/>), or, if its state names neither, in the
+        /// one the walk reaches first.
+        /// </summary>
+        public ForumTree GetForumTree() => BuildForumTree(_store, _roots);
+
+        internal static ForumTree BuildForumTree(CrawlStateStore store, IEnumerable<string> rootUrls)
+        {
+            var tree = new ForumTree();
+            // Thread ID to the keys of the forums that list it, in walk order (the order in which the collector visits them)
+            var listedIn = new Dictionary<long, List<string>>();
+
+            void Walk(string url, string? parentKey)
+            {
+                var key = SmogonPages.GetForumKey(url);
+                if (tree.Forums.ContainsKey(key))
+                {
+                    return;
+                }
+                var forum = store.GetForum(url);
+                tree.Forums[key] = new ForumTreeEntry { Url = url, Parent = parentKey, Title = forum?.Title };
+                foreach (var threadId in forum?.Threads.Keys ?? Enumerable.Empty<long>())
+                {
+                    if (!listedIn.TryGetValue(threadId, out var keys))
+                    {
+                        listedIn[threadId] = keys = [];
+                    }
+                    keys.Add(key);
+                }
+                foreach (var subForum in forum?.SubForums ?? [])
+                {
+                    Walk(subForum, key);
+                }
+            }
+
+            foreach (var root in rootUrls)
+            {
+                Walk(root, null);
+            }
+            foreach (var (threadId, keys) in listedIn)
+            {
+                var key = keys[0];
+                // A forum that a thread moved away from keeps it in its list until its listing is walked to the end or
+                // GetStoredThreads drops it there, which can be a run later.
+                if (keys.Count > 1 && store.GetThread(threadId) is ThreadCrawlState thread)
+                {
+                    key = keys.FirstOrDefault(candidate => tree.Forums[candidate].Url == thread.ForumUrl) ?? key;
+                }
+                tree.Threads[threadId] = key;
+            }
+            return tree;
+        }
+
         private async Task<IDictionary<string, List<string>>> CollectAsync(IEnumerable<string> names, IDictionary<string, string>? additionals)
         {
             var started = DateTime.UtcNow;
@@ -119,6 +177,16 @@ namespace TournamentParser.ThreadCollector
                 roots.Add(nodes.FirstOrDefault(node => node.Url == additional.Value)
                     ?? new ForumNode { Title = additional.Key, Url = additional.Value });
             }
+            foreach (var root in roots)
+            {
+                if (!_roots.Contains(root.Url))
+                {
+                    _roots.Add(root.Url);
+                }
+            }
+            // The titles the index shows, for the forum tree. A forum passed by URL may be linked there only as a subforum;
+            // the name it was passed with is not taken as its title.
+            var titles = nodes.Concat(subNodeLinks).GroupBy(node => node.Url).ToDictionary(group => group.Key, group => group.First().Title);
 
             // Searched before the listings are walked: a post the listing shows is then either found or newer than the search.
             var search = await SearchSinceLastRunsAsync(roots).ConfigureAwait(false);
@@ -127,7 +195,8 @@ namespace TournamentParser.ThreadCollector
             foreach (var root in roots)
             {
                 var covered = search != null && search.Covers(root.Url);
-                await VisitForumAsync(root.Url, root.LatestPostTimestamp, forums, covered ? search : null, covered ? search!.StartedAt : started).ConfigureAwait(false);
+                await VisitForumAsync(root.Url, root.LatestPostTimestamp, titles.GetValueOrDefault(root.Url), forums,
+                    covered ? search : null, covered ? search!.StartedAt : started).ConfigureAwait(false);
             }
             return GetStoredThreads(forums);
         }
@@ -202,9 +271,10 @@ namespace TournamentParser.ThreadCollector
         /// Brings a forum and its subforums up to date and adds their URLs to <paramref name="forums"/>.
         /// Returns false if a thread in the subtree could not be read, so the subtree must not be skipped next run.
         /// </summary>
+        /// <param name="title">The forum's title in the node list that links it; null or empty if it showed none.</param>
         /// <param name="search">The replay search of the run, if it covers the forum.</param>
         /// <param name="coveredUntil">Posts up to this time are covered once the subtree is done.</param>
-        private async Task<bool> VisitForumAsync(string url, long nodeTimestamp, List<string> forums, ForumSearch? search, DateTime coveredUntil)
+        private async Task<bool> VisitForumAsync(string url, long nodeTimestamp, string? title, List<string> forums, ForumSearch? search, DateTime coveredUntil)
         {
             if (!_visitedForums.Add(url))
             {
@@ -213,6 +283,11 @@ namespace TournamentParser.ThreadCollector
             forums.Add(url);
 
             var forum = _store.GetForum(url) ?? new ForumCrawlState();
+            if (!string.IsNullOrEmpty(title))
+            {
+                // For the forum tree; saved below on every path
+                forum.Title = title;
+            }
             var incremental = forum.Complete && !_options.FullRefresh;
             var recentSince = DateTimeOffset.UtcNow.Subtract(_options.RecentActivityWindow).ToUnixTimeSeconds();
 
@@ -327,7 +402,7 @@ namespace TournamentParser.ThreadCollector
             var clean = forum.RetryThreads.Count == 0;
             foreach (var subForum in subForums)
             {
-                clean &= await VisitForumAsync(subForum.Url, subForum.LatestPostTimestamp, forums, search, coveredUntil).ConfigureAwait(false);
+                clean &= await VisitForumAsync(subForum.Url, subForum.LatestPostTimestamp, subForum.Title, forums, search, coveredUntil).ConfigureAwait(false);
             }
 
             // Only now is the whole subtree up to date; until then the next run looks at it again.
