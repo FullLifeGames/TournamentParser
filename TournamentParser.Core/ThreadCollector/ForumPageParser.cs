@@ -16,7 +16,8 @@ namespace TournamentParser.ThreadCollector
         [GeneratedRegex("<div class=\"node node--id\\d+ node--depth\\d+")]
         private static partial Regex NodeStartRegex();
 
-        [GeneratedRegex("<h3 class=\"node-title\">\\s*<a href=\"([^\"]*/forums/forums/[^\"]+)\"[^>]*>([^<]*)</a>")]
+        // Since 2026-11-24 the link can sit in an <element-tooltip>.
+        [GeneratedRegex("<h3 class=\"node-title\">\\s*(?:<element-tooltip\\b[^>]*>\\s*)?<a href=\"([^\"]*/forums/forums/[^\"]+)\"[^>]*>([^<]*)</a>")]
         private static partial Regex NodeTitleRegex();
 
         [GeneratedRegex("class=\"node-extra-date[^\"]*\"[^>]*data-timestamp=\"(\\d+)\"")]
