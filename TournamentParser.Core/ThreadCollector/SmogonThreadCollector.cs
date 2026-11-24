@@ -715,7 +715,7 @@ namespace TournamentParser.ThreadCollector
                         queue.Add(extra);
                     }
                 }
-                missingPosts.AddRange((expectedPosts.GetValueOrDefault(page) ?? []).Where(postId => !site!.Contains($"data-content=\"post-{postId}\"")));
+                missingPosts.AddRange((expectedPosts.GetValueOrDefault(page) ?? []).Where(postId => !site!.Contains($"id=\"js-post-{postId}\"")));
 
                 try
                 {
