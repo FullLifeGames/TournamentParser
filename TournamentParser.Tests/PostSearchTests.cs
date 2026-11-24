@@ -23,8 +23,8 @@ namespace TournamentParser.Tests
         {
             var url = PostSearch.Url(PostSearch.ReplayQuery, PostSearch.Filter.Forums([34, 698]), new DateTime(2026, 11, 12), new DateTime(2026, 11, 13));
 
-            Assert.That(url, Is.EqualTo("https://www.smogon.com/forums/search/1/?q=replay.pokemonshowdown.com&t=post&o=date"
-                + "&c[newer_than]=2026-11-12&c[older_than]=2026-11-13&c[nodes][0]=34&c[nodes][1]=698&c[child_nodes]=1"));
+            Assert.That(url, Is.EqualTo("https://www.smogon.com/forums/search/search?keywords=replay.pokemonshowdown.com&search_type=post&order=date"
+                + "&c[newer_than]=1794441600&c[older_than]=1794528000&c[nodes][0]=34&c[nodes][1]=698&c[child_nodes]=1"));
         }
 
         [Test]
@@ -32,7 +32,7 @@ namespace TournamentParser.Tests
         {
             var url = PostSearch.Url(PostSearch.ReplayQuery, PostSearch.Filter.Thread(3721437), null, null);
 
-            Assert.That(url, Is.EqualTo("https://www.smogon.com/forums/search/1/?q=replay.pokemonshowdown.com&t=post&o=date&c[thread]=3721437"));
+            Assert.That(url, Is.EqualTo("https://www.smogon.com/forums/search/search?keywords=replay.pokemonshowdown.com&search_type=post&order=date&c[thread]=3721437"));
         }
 
         [Test]
