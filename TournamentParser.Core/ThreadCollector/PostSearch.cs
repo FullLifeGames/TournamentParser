@@ -56,15 +56,18 @@ namespace TournamentParser.ThreadCollector
 
         /// <summary>
         /// The search for posts matching <paramref name="query"/>, from <paramref name="since"/> on and before
-        /// <paramref name="before"/>, newest first. Smogon reads the dates in its own time zone, so callers keep a day of margin.
+        /// <paramref name="before"/> (UTC days), newest first. Since 2026-11-24 a search is started at /forums/search/search, which
+        /// redirects to its results, and takes the dates as timestamps.
         /// </summary>
         public static string Url(string query, Filter filter, DateTime? since, DateTime? before) =>
-            Common.SmogonBaseUrl + "/forums/search/1/?q=" + Uri.EscapeDataString(query) + "&t=post&o=date"
-            + (since is DateTime start ? "&c[newer_than]=" + start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "")
-            + (before is DateTime end ? "&c[older_than]=" + end.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "")
+            Common.SmogonBaseUrl + "/forums/search/search?keywords=" + Uri.EscapeDataString(query) + "&search_type=post&order=date"
+            + (since is DateTime start ? "&c[newer_than]=" + Timestamp(start) : "")
+            + (before is DateTime end ? "&c[older_than]=" + Timestamp(end) : "")
             + (filter.ThreadId is long threadId ? "&c[thread]=" + threadId : "")
             + string.Concat(filter.NodeIds.Select((id, index) => $"&c[nodes][{index}]={id}"))
             + (filter.NodeIds.Count > 0 ? "&c[child_nodes]=1" : "");
+
+        private static long Timestamp(DateTime day) => new DateTimeOffset(DateTime.SpecifyKind(day.Date, DateTimeKind.Utc)).ToUnixTimeSeconds();
 
         /// <summary>
         /// All replay posts in the forums <paramref name="nodeIds"/> and their subforums from <paramref name="since"/> on (a

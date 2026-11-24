@@ -152,12 +152,12 @@ namespace TournamentParser.Tests.TestSupport
                 .Select(pair => (Key: Uri.UnescapeDataString(pair[0]), Value: pair.Length > 1 ? Uri.UnescapeDataString(pair[1]) : ""))
                 .ToList();
             string? Get(string key) => parameters.FirstOrDefault(p => p.Key == key).Value;
-            if (Get("q") != ReplayMarker)
+            if (Get("keywords") != ReplayMarker)
             {
                 throw new InvalidOperationException("The fake search only knows the replay query: " + url);
             }
-            var newer = Get("c[newer_than]") is string n ? DateTime.ParseExact(n, "yyyy-MM-dd", CultureInfo.InvariantCulture) : DateTime.MinValue;
-            var older = Get("c[older_than]") is string o ? DateTime.ParseExact(o, "yyyy-MM-dd", CultureInfo.InvariantCulture) : DateTime.MaxValue;
+            var newer = Get("c[newer_than]") is string n ? DateTimeOffset.FromUnixTimeSeconds(long.Parse(n)).UtcDateTime : DateTime.MinValue;
+            var older = Get("c[older_than]") is string o ? DateTimeOffset.FromUnixTimeSeconds(long.Parse(o)).UtcDateTime : DateTime.MaxValue;
             long? threadId = Get("c[thread]") is string t ? long.Parse(t) : null;
             var nodeIds = parameters.Where(p => p.Key.StartsWith("c[nodes]")).Select(p => long.Parse(p.Value)).ToHashSet();
             var withSubForums = Get("c[child_nodes]") == "1";
