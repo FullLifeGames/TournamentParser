@@ -53,7 +53,7 @@ namespace TournamentParser.Tests
                 var pageUrl = SmogonPages.PageUrl(hit.ThreadUrl, hit.Page);
                 var page = await client.GetStringAsync(pageUrl);
                 SmogonPages.EnsureThreadPage(page, pageUrl);
-                Assert.That(page, Does.Contain($"data-content=\"post-{hit.PostId}\""), "the position gives the page of the post");
+                Assert.That(page, Does.Contain($"id=\"js-post-{hit.PostId}\""), "the position gives the page of the post");
             }
             Assert.That(cookieHandler.BrowserRequests, Is.EqualTo(1), "only the first thread page needs the browser");
             Console.WriteLine(politeHandler.Statistics);

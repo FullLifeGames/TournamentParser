@@ -222,10 +222,11 @@ namespace TournamentParser.ThreadScanner
         {
             var keepLine = true;
             if (line.Contains("\"articleBody\": \"")
-                || (line.Contains("\"text\": \"") && line.TrimStart().StartsWith("\"text\": \"")))
+                || (line.Contains("\"text\": \"") && line.TrimStart().StartsWith("\"text\": \""))
+                || line.TrimStart().StartsWith("{\"@context\""))
             {
                 // XenForo's JSON-LD block inlines the whole first post as a single line;
-                // the field used to be called "articleBody" and is now called "text".
+                // the field used to be called "articleBody" and is now called "text". Since 2026-11-24 the block is one line.
                 keepLine = false;
             }
             else if (line.Contains("<h1 class=\"p-title-value\">"))
@@ -238,7 +239,7 @@ namespace TournamentParser.ThreadScanner
                     thread.Name = thread.Name[(thread.Name.LastIndexOf(">") + 1)..];
                 }
             }
-            else if (line.Contains("<article class=\"message-body js-selectToQuote\">"))
+            else if (line.Contains("<article class=\"message-body js-selectToQuote\">") || line.Contains("<quotable-text class=\"message-body\">"))
             {
                 lineDataHandler.TakePost = true;
             }

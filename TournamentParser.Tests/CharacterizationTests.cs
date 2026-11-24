@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using TournamentParser.Core.Data;
 using TournamentParser.Data;
@@ -532,14 +533,23 @@ namespace TournamentParser.Tests
         }
 
         [Test]
-        public void OltFixtureScan_JsonLdTextBlockDoesNotCreateGarbageUsers()
+        [TestCase(false, TestName = "OltFixtureScan_JsonLdTextBlockDoesNotCreateGarbageUsers")]
+        [TestCase(true, TestName = "OltFixtureScan_OneLineJsonLdBlockIsSkipped")]
+        public void OltFixtureScan_JsonLdTextBlockDoesNotCreateGarbageUsers(bool oneLine)
         {
             // XenForo's JSON-LD block now exposes the first post as a one-line "text": "..."
             // field (formerly "articleBody"); it contains "x vs y" content and must not be
-            // parsed as a match line.
+            // parsed as a match line. Since 2026-11-24 the whole block is one line.
             const string url = "https://www.smogon.com/forums/threads/smogons-official-ladder-tournament-v-replay-thread.3640819/";
+            var page = Fixture("olt-v-replay-page-1.html");
+            if (oneLine)
+            {
+                page = Regex.Replace(page, "(?<=application/ld\\+json\">\\s*)\\{[\\s\\S]*?\\}(?=\\s*</script>)", block => Regex.Replace(block.Value, "\\n\\s*", ""));
+                Assert.That(page, Does.Contain("{\"@context\""));
+            }
+            Assert.That(SmogonThreadScanner.ExtractImportantLines(url, 1, page), Does.Not.Contain("schema.org"), "stored lines");
             var fake = new FakeHttpMessageHandler();
-            fake.Map(url, Fixture("olt-v-replay-page-1.html"));
+            fake.Map(url, page);
             Common.HttpClient = new HttpClient(fake);
 
             var scanner = new SmogonThreadScanner();
@@ -863,6 +873,7 @@ namespace TournamentParser.Tests
 
         [TestCase("\t<article class=\"message message--post js-post js-inlineModContainer  \"", true, true, TestName = "Post until 2026-11-13")]
         [TestCase("\t<article class=\"message js-post js-inlineModContainer  \"", true, true, TestName = "Post since 2026-11-14")]
+        [TestCase("\t<article class=\"message js-post  \"", true, true, TestName = "Post since 2026-11-24")]
         [TestCase("\t<article class=\"message message--article js-post js-inlineModContainer  \"", true, false, TestName = "First post of an article thread")]
         [TestCase("\t\t<article class=\"message-body js-selectToQuote\">", false, false, TestName = "Post body")]
         public void SmogonPages_PostStart(string line, bool isPost, bool countedByTheScanner)

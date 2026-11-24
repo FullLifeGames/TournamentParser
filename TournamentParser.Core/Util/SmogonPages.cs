@@ -51,8 +51,8 @@ namespace TournamentParser.Util
         /// </summary>
         private const string PostStartUntil20261113 = "<article class=\"message message--post js-post js-inlineModContainer";
 
-        /// <summary>Start of a post since 2026-11-14.</summary>
-        private const string PostStart = "<article class=\"message js-post js-inlineModContainer";
+        /// <summary>Start of a post since 2026-11-14 (followed by js-inlineModContainer until 2026-11-23).</summary>
+        private const string PostStart = "<article class=\"message js-post";
 
         /// <summary>
         /// Whether the line opens a post that the scanner counts, in either markup. The first post of an article thread
