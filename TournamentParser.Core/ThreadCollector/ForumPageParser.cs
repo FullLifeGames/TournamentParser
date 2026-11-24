@@ -30,8 +30,9 @@ namespace TournamentParser.ThreadCollector
         [GeneratedRegex("<[^>]*>")]
         private static partial Regex TagRegex();
 
-        // XenForo leaves out the slug (".../threads/123/") when a title has no URL-safe characters.
-        [GeneratedRegex("data-preview-url=\"(/forums/threads/(?:[^\"/]*?\\.)?(\\d+)/)preview\"\\s*>(.*?)</a>", RegexOptions.Singleline)]
+        // XenForo leaves out the slug (".../threads/123/") when a title has no URL-safe characters. Until 2026-11-23 the link
+        // carried data-preview-url, since then a <preview-tooltip preview-url> wraps it.
+        [GeneratedRegex("preview-url=\"(/forums/threads/(?:[^\"/]*?\\.)?(\\d+)/)preview\"[^>]*>(?:\\s*<a\\b[^>]*>)?(.*?)</a>", RegexOptions.Singleline)]
         private static partial Regex ThreadLinkRegex();
 
         [GeneratedRegex("<time\\s+class=\"structItem-latestDate[^\"]*\"([^>]*)>")]

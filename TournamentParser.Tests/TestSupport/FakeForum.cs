@@ -328,7 +328,7 @@ namespace TournamentParser.Tests.TestSupport
             }
             sb.Append("\t\t\t</ul>\n");
             sb.Append("\t\t\t<div class=\"structItem-title\">\n");
-            sb.Append($"\t\t\t\t<a href=\"{thread.Path}\" class=\"\" data-tp-primary=\"on\" data-xf-init=\"preview-tooltip\" data-preview-url=\"{thread.Path}preview\"\n\t\t\t\t\t>\n\t\t\t\t\t{WebUtility.HtmlEncode(thread.Title)}\n\t\t\t\t</a>\n");
+            sb.Append($"\t\t\t\t<preview-tooltip preview-url=\"{thread.Path}preview\"><a href=\"{thread.Path}\" class=\"\" data-tp-primary=\"on\"\n\t\t\t\t\t>\n\t\t\t\t\t{WebUtility.HtmlEncode(thread.Title)}\n\t\t\t\t</a></preview-tooltip>\n");
             sb.Append("\t\t\t</div>\n");
             if (thread.Pages.Count > 1)
             {
