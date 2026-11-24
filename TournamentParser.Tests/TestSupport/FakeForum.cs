@@ -289,7 +289,7 @@ namespace TournamentParser.Tests.TestSupport
             sb.Append($"\t<div class=\"node node--id{Math.Abs(forum.Path.GetHashCode()) % 1000} node--depth2 node--unread\">\n");
             sb.Append("\t\t<div class=\"node-body\">\n");
             sb.Append("\t\t\t\t<h3 class=\"node-title\">\n");
-            sb.Append($"\t\t\t\t\t<a href=\"{forum.Path}\" data-xf-init=\"element-tooltip\" data-shortcut=\"node-description\">{WebUtility.HtmlEncode(forum.Title)}</a>\n");
+            sb.Append($"\t\t\t\t\t<element-tooltip element=\"#node-description-1\" placement=\"right\"><a href=\"{forum.Path}\">{WebUtility.HtmlEncode(forum.Title)}</a></element-tooltip>\n");
             sb.Append("\t\t\t\t</h3>\n");
             sb.Append("\t\t<div class=\"node-subNodesFlat\">\n\t\t\t<ol class=\"node-subNodeFlatList\">\n");
             foreach (var subForum in subNodeLinks)
