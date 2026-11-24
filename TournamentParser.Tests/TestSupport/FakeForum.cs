@@ -10,8 +10,8 @@ using System.Text.RegularExpressions;
 namespace TournamentParser.Tests.TestSupport
 {
     /// <summary>
-    /// A small Smogon forum in XenForo markup: forum index, forum listings (sorted by latest post, with their subforums)
-    /// and thread pages. Change the model between runs and call <see cref="Serve"/> again to publish the new state.
+    /// A small Smogon forum in its markup since 2026-11-24: forum index, forum listings (sorted by latest post, with their
+    /// subforums) and thread pages. Change the model between runs and call <see cref="Serve"/> again to publish the new state.
     /// </summary>
     public class FakeForum
     {
@@ -191,7 +191,7 @@ namespace TournamentParser.Tests.TestSupport
             var pageCount = Math.Max(1, (results.Count + 9) / 10);
 
             var sb = new StringBuilder();
-            sb.Append("<html data-template=\"search_results\">\n<body data-template=\"search_results\">\n");
+            sb.Append("<html lang=\"en-US\" class=\"template-search_results\">\n<body>\n");
             var otherParameters = string.Join("&amp;", parameters.Where(p => p.Key != "page").Select(p => p.Key + "=" + p.Value));
             if (pageCount > 1)
             {
@@ -235,7 +235,7 @@ namespace TournamentParser.Tests.TestSupport
         public string IndexPage()
         {
             var sb = new StringBuilder();
-            sb.Append("<html data-template=\"forum_list\">\n<body data-template=\"forum_list\">\n");
+            sb.Append("<html lang=\"en-US\" class=\"template-forum_list\">\n<body>\n");
             sb.Append("<div class=\"block block--category block--category1\">\n");
             foreach (var section in Sections)
             {
@@ -251,7 +251,7 @@ namespace TournamentParser.Tests.TestSupport
         {
             var pageCount = ListingPageCount(forum);
             var sb = new StringBuilder();
-            sb.Append("<html data-template=\"forum_view\">\n<body data-template=\"forum_view\">\n");
+            sb.Append("<html lang=\"en-US\" class=\"template-forum_view\">\n<body>\n");
             if (pageCount > 1)
             {
                 AppendPageNav(sb, forum.Path, pageCount);

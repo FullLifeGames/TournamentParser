@@ -229,7 +229,7 @@ namespace TournamentParser.ThreadCollector
                 {
                     throw new SmogonAccessBlockedException(url);
                 }
-                if (html.Contains("data-template=\"search_results\""))
+                if (SmogonPages.HasTemplate(html, "search_results"))
                 {
                     return html;
                 }
