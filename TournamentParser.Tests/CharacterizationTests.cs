@@ -544,7 +544,7 @@ namespace TournamentParser.Tests
             var page = Fixture("olt-v-replay-page-1.html");
             if (oneLine)
             {
-                page = Regex.Replace(page, "(?<=application/ld\\+json\">\\s*)\\{[\\s\\S]*?\\}(?=\\s*</script>)", block => Regex.Replace(block.Value, "\\n\\s*", ""));
+                page = Regex.Replace(page, "(?<=application/ld\\+json\">\\s*)\\{[\\s\\S]*?\\}(?=\\s*</script>)", block => Regex.Replace(block.Value, "\\r?\\n\\s*", ""));
                 Assert.That(page, Does.Contain("{\"@context\""));
             }
             Assert.That(SmogonThreadScanner.ExtractImportantLines(url, 1, page), Does.Not.Contain("schema.org"), "stored lines");
