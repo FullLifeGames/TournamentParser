@@ -243,7 +243,7 @@ namespace TournamentParser.ThreadScanner
                     thread.Name = thread.Name[(thread.Name.LastIndexOf(">") + 1)..];
                 }
             }
-            else if (line.Contains("<article class=\"message-body js-selectToQuote\">") || line.Contains("<quotable-text class=\"message-body\">"))
+            else if (SmogonPages.IsPostBodyStart(line))
             {
                 lineDataHandler.TakePost = true;
             }
@@ -258,7 +258,7 @@ namespace TournamentParser.ThreadScanner
                 lineDataHandler.PostNumber++;
                 lineDataHandler.CanTakeReplay = true;
             }
-            else if (line.Contains("<header class=\"message-attribution message-attribution--split\">"))
+            else if (line.Contains(SmogonPages.AttributionMarker))
             {
                 lineDataHandler.TimerHeader = true;
             }
@@ -275,7 +275,7 @@ namespace TournamentParser.ThreadScanner
                 }
                 lineDataHandler.TimerHeader = false;
             }
-            else if (line.StartsWith("\t</article>"))
+            else if (line.StartsWith(SmogonPages.PostEnd))
             {
                 lineDataHandler.PostStarted = false;
                 lineDataHandler.CanTakeReplay = false;
@@ -295,7 +295,7 @@ namespace TournamentParser.ThreadScanner
                 tempValue = tempValue[..tempValue.IndexOf(Common.Quotation)];
                 lineDataHandler.UserLink = tempValue;
             }
-            else if (line.Contains("data-author=\""))
+            else if (line.Contains(SmogonPages.AuthorMarker))
             {
                 lineDataHandler.PostedBy = line[(line.IndexOf("data-author") + 5)..];
                 lineDataHandler.PostedBy = lineDataHandler.PostedBy[(lineDataHandler.PostedBy.IndexOf(Common.Quotation) + 1)..];

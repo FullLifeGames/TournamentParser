@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
 
@@ -67,6 +68,52 @@ namespace TournamentParser.Util
         /// <summary>Whether a page or a stored page contains a post.</summary>
         public static bool ContainsPost(string html) => AnyPostStartRegex().IsMatch(html);
 
+        public const string AuthorMarker = "data-author=\"";
+
+        public const string AttributionMarker = "<header class=\"message-attribution message-attribution--split\">";
+
+        /// <summary>The line that closes a post starts with it.</summary>
+        public const string PostEnd = "\t</article>";
+
+        /// <summary>Whether the line opens the body of a post: an &lt;article&gt; until 2026-11-23, a &lt;quotable-text&gt; since then.</summary>
+        public static bool IsPostBodyStart(string line) =>
+            line.Contains("<article class=\"message-body js-selectToQuote\">") || line.Contains("<quotable-text class=\"message-body\">");
+
+        [GeneratedRegex("\\sid=\"js-post-\\d+\"")]
+        private static partial Regex PostIdRegex();
+
+        /// <summary>
+        /// The first marker the scanner or the collector reads that a post lacks, or null. Without this check a new post markup
+        /// reads as posts without matches, as on 2026-11-24. The first post of an article thread is left out, as in the scanner.
+        /// </summary>
+        public static string? UnreadablePost(string html)
+        {
+            var starts = AnyPostStartRegex().Matches(html);
+            for (var i = 0; i < starts.Count; i++)
+            {
+                var post = html[starts[i].Index..(i + 1 < starts.Count ? starts[i + 1].Index : html.Length)];
+                var lines = Common.EnumerateLines(post).ToList();
+                if (lines[0].Contains("message--article"))
+                {
+                    continue;
+                }
+                var header = lines.FindIndex(line => line.Contains(AttributionMarker));
+                var missing = !IsPostStart(lines[0]) ? "known start (" + lines[0].Trim() + ")"
+                    : !post.Contains(AuthorMarker) ? "data-author"
+                    : !PostIdRegex().IsMatch(post) ? "id=\"js-post-N\""
+                    : header == -1 ? "attribution header"
+                    : !lines.Skip(header + 1).Any(line => line.Contains("<time") && line.Contains("title=\"")) ? "date"
+                    : !lines.Any(IsPostBodyStart) ? "known body"
+                    : !lines.Any(line => line.StartsWith(PostEnd)) ? "end"
+                    : null;
+                if (missing != null)
+                {
+                    return $"post {i + 1} has no {missing}";
+                }
+            }
+            return null;
+        }
+
         public const string LockedMarker = "blockStatus-message--locked";
 
         public const string TitleMarker = "<h1 class=\"p-title-value\">";
@@ -114,6 +161,10 @@ namespace TournamentParser.Util
             if (!ContainsPost(html))
             {
                 throw new UnexpectedPageException(url, "the page contains no posts");
+            }
+            if (UnreadablePost(html) is string reason)
+            {
+                throw new UnexpectedPageException(url, reason);
             }
         }
 

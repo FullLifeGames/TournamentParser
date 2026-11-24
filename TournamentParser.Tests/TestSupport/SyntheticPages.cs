@@ -14,7 +14,7 @@ namespace TournamentParser.Tests.TestSupport
         {
             public string Author { get; set; } = "";
             public int UserId { get; set; }
-            /// <summary>Rendered as <c>id="js-post-{PostId}"</c> when set.</summary>
+            /// <summary>Rendered as <c>id="js-post-{PostId}"</c>; posts without one are numbered by their place on the page.</summary>
             public long PostId { get; set; }
             /// <summary>e.g. "Mar 22, 2021 at 12:15 AM" (parsed as "MMM d, yyyy h:mm tt" after "at " removal)</summary>
             public string DateTitle { get; set; } = "Mar 22, 2021 at 12:15 AM";
@@ -40,15 +40,12 @@ namespace TournamentParser.Tests.TestSupport
                 sb.Append('\n');
                 sb.Append("</nav>\n");
             }
-            foreach (var post in posts)
+            foreach (var (post, index) in posts.Select((post, index) => (post, index)))
             {
                 var lowerName = post.Author.ToLower().Replace(" ", "-");
                 sb.Append("\t<article class=\"message js-post  \"\n");
                 sb.Append($"\t\tdata-author=\"{post.Author}\"\n");
-                if (post.PostId > 0)
-                {
-                    sb.Append($"\t\tid=\"js-post-{post.PostId}\"\n");
-                }
+                sb.Append($"\t\tid=\"js-post-{(post.PostId > 0 ? post.PostId : index + 1)}\"\n");
                 sb.Append("\t<header class=\"message-attribution message-attribution--split\">\n");
                 // Mirrors current XenForo output: no data-date-string attribute, full date in title.
                 sb.Append($"<time class=\"u-dt\" dir=\"auto\" datetime=\"2021-03-22T00:15:03-0400\" data-timestamp=\"1616386503\" data-date=\"Mar 22, 2021\" data-time=\"12:15 AM\" title=\"{post.DateTitle}\">\n");
