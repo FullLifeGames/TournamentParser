@@ -887,6 +887,28 @@ namespace TournamentParser.Tests
             Assert.That(SmogonPages.IsBotCheck(Fixture("ost-xvii-finals-page-1.html")), Is.False);
             Assert.That(SmogonPages.IsBotCheck(Fixture("ost-xvii-finals-page-1.html").Replace("</article>", "my browser is stuck at Checking your browser, cookie xf_smogon_gate</article>")),
                 Is.False, "a post about the gate is no bot check");
+            Assert.That(SmogonPages.IsBotCheck("<html><body><p id=\"m\">Checking your browser...</p><script>document.cookie = \"forum_gate=\" + n</script>"), Is.True, "since 2026-11-24");
+            Assert.That(SmogonPages.IsBotCheck("<html class=\"template-thread_view\">\n<p>Checking your browser, cookie forum_gate=</p>"), Is.False, "a post about the gate, since 2026-11-24");
+        }
+
+        [TestCase("<html data-template=\"forum_view\">", true, TestName = "Template until 2026-11-23")]
+        [TestCase("<html id=\"forum\" lang=\"en-US\"\n\tdata-app=\"public\"\n\tclass=\"template-forum_view\">", true, TestName = "Template since 2026-11-24")]
+        [TestCase("<html class=\"has-no-js template-forum_view\">", true, TestName = "Template among other classes")]
+        [TestCase("<html class=\"template-forum_view_x\">", false, TestName = "Longer template name")]
+        [TestCase("<html class=\"template-forum_list\">", false, TestName = "Other template")]
+        [TestCase("<html>\n<body class=\"template-forum_view\">", false, TestName = "Class not on the html tag")]
+        [TestCase("<html lang=\"en-US\">", false, TestName = "No template")]
+        public void SmogonPages_EnsureTemplate(string page, bool isForumView)
+        {
+            const string url = "https://www.smogon.com/forums/forums/tournaments.34/";
+            if (isForumView)
+            {
+                Assert.DoesNotThrow(() => SmogonPages.EnsureTemplate(page, url, "forum_view"));
+            }
+            else
+            {
+                Assert.Throws<UnexpectedPageException>(() => SmogonPages.EnsureTemplate(page, url, "forum_view"));
+            }
         }
 
         [Test]

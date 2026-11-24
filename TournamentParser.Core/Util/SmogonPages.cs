@@ -75,11 +75,22 @@ namespace TournamentParser.Util
         public static string PageUrl(string baseUrl, int page) => page <= 1 ? baseUrl : baseUrl + "page-" + page;
 
         /// <summary>
-        /// Smogon's proof-of-work page ("Checking your browser...", cookie xf_smogon_gate). Real forum pages always carry a
-        /// XenForo template name, so a post that merely mentions the gate does not count.
+        /// Smogon's proof-of-work page ("Checking your browser...", cookie xf_smogon_gate, since 2026-11-24 forum_gate). Real
+        /// forum pages always carry a XenForo template name, so a post that merely mentions the gate does not count.
         /// </summary>
         public static bool IsBotCheck(string html) =>
-            !html.Contains("data-template=\"") && (html.Contains("xf_smogon_gate") || html.Contains("Checking your browser"));
+            !HasTemplate(html) && (html.Contains("xf_smogon_gate") || html.Contains("forum_gate=") || html.Contains("Checking your browser"));
+
+        /// <summary>
+        /// Whether the page names the XenForo template (any one if null): data-template="forum_list" until 2026-11-23, since
+        /// then only the class template-forum_list on the &lt;html&gt; tag.
+        /// </summary>
+        public static bool HasTemplate(string html, string? template = null)
+        {
+            var name = template == null ? "[^\"\\s]+" : Regex.Escape(template);
+            return Regex.IsMatch(html, "<html\\b[^>]*\\sclass=\"(?:[^\"]*\\s)?template-" + name + "[\"\\s]")
+                || Regex.IsMatch(html, "data-template=\"" + name + "\"");
+        }
 
         /// <summary>Forum index and forum listing pages carry the XenForo template name.</summary>
         public static void EnsureTemplate(string html, string url, string template)
@@ -88,7 +99,7 @@ namespace TournamentParser.Util
             {
                 throw new SmogonAccessBlockedException(url);
             }
-            if (!html.Contains("data-template=\"" + template + "\""))
+            if (!HasTemplate(html, template))
             {
                 throw new UnexpectedPageException(url, "expected the XenForo template '" + template + "'");
             }
