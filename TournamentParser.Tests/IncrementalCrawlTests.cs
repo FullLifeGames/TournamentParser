@@ -509,6 +509,38 @@ namespace TournamentParser.Tests
             Assert.That(threads[Url(Tournaments)], Is.EqualTo(new[] { thread.Url }));
         }
 
+        [TestCase(1, TestName = "ThreadPageInAnUnknownPostMarkup_IsSkippedAndKeepsItsState")]
+        [TestCase(5, TestName = "FiveThreadPagesInAnUnknownPostMarkup_StopTheCrawl")]
+        public void ThreadPagesInAnUnknownPostMarkup(int count)
+        {
+            var section = Section("Tournaments", Tournaments);
+            var threads = Enumerable.Range(1, count).Select(id => TourThread(id, 1, OldStart.AddDays(id))).ToList();
+            section.Threads.AddRange(threads);
+            Crawl();
+            var stored = threads.Select(thread => JsonConvert.SerializeObject(StoredThread(thread.Id))).ToList();
+
+            threads.ForEach(thread => thread.Pages[0].Add(ReplayPost(thread.Id, "Cat", 9, Newest())));
+            _forum.Serve(_http);
+            foreach (var thread in threads)
+            {
+                // As on 2026-11-24: the page loads, but the scanner recognises none of its posts.
+                _http.Map(thread.Url, FakeForum.ThreadPage(thread, 1).Replace("<article class=\"message js-post", "<article class=\"message message--new js-post"));
+            }
+            var run = () => new SmogonThreadCollector(_cache, Options()).GetGeneralThreadsForForums("Tournaments").Wait();
+            if (count < 5)
+            {
+                run();
+            }
+            else
+            {
+                var error = Assert.Throws<AggregateException>(() => run())!;
+                Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
+            }
+
+            Assert.That(Requests, Is.SupersetOf(threads.Select(thread => thread.Url)));
+            Assert.That(threads.Select(thread => JsonConvert.SerializeObject(StoredThread(thread.Id))), Is.EqualTo(stored));
+        }
+
         [Test]
         public void FailedThread_IsRetriedInTheNextRun()
         {

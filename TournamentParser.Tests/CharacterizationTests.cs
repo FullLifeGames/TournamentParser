@@ -933,6 +933,55 @@ namespace TournamentParser.Tests
             Assert.Throws<UnexpectedPageException>(() => SmogonPages.EnsureThreadPage("<html data-template=\"thread_view\">\n</html>", url));
         }
 
+        // The second post loses one marker; today's case is the unknown start.
+        [TestCase("", "", null, TestName = "Posts in the markup since 2026-11-24")]
+        [TestCase("<article class=\"message js-post", "<article class=\"message message--new js-post", "known start", TestName = "Post in an unknown markup")]
+        [TestCase("data-author=", "data-poster=", "data-author", TestName = "Post without data-author")]
+        [TestCase("id=\"js-post-", "id=\"post-", "js-post-N", TestName = "Post without its id")]
+        [TestCase("message-attribution--split", "message-attribution--new", "attribution header", TestName = "Post without the attribution header")]
+        [TestCase("<time ", "<span ", "date", TestName = "Post without a date")]
+        [TestCase("title=\"Mar 22, 2021", "title=\"2021-03-22", "date", TestName = "Post with a date the scanner can't read")]
+        [TestCase("<quotable-text class=\"message-body\">", "<div class=\"message-body\">", "body", TestName = "Post without a known body")]
+        [TestCase("\n\t</article>", "\n\t</div>", "end", TestName = "Post without its end")]
+        public void SmogonPages_EnsureThreadPage_NeedsEveryPostMarker(string marker, string replacement, string missing)
+        {
+            const string url = "https://www.smogon.com/forums/threads/x.1/";
+            var post = new SyntheticPages.Post { Author = "Ann", UserId = 1, BodyLines = ["Ann vs Bob"] };
+            var page = SyntheticPages.ThreadPage("Tour", [post, post]);
+            var second = page.LastIndexOf("<article class=\"message js-post");
+            page = marker == "" ? page : page[..second] + page[second..].Replace(marker, replacement);
+
+            if (missing == null)
+            {
+                Assert.DoesNotThrow(() => SmogonPages.EnsureThreadPage(page, url));
+                return;
+            }
+            var error = Assert.Throws<UnexpectedPageException>(() => SmogonPages.EnsureThreadPage(page, url))!;
+            Assert.That(error.Message, Does.Contain("post 2 has no").And.Contain(missing));
+        }
+
+        [Test]
+        public void SmogonPages_RealThreadPages_HaveEveryPostMarker()
+        {
+            var pages = Directory.GetFiles(Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures"), "*.html")
+                .Select(path => (Name: Path.GetFileName(path), Html: File.ReadAllText(path)))
+                .Where(page => SmogonPages.HasTemplate(page.Html, "thread_view") || SmogonPages.HasTemplate(page.Html, "thread_view_type_poll")).ToList();
+            Assert.That(pages, Has.Count.EqualTo(18));
+            Assert.That(pages.Select(page => page.Name + ": " + SmogonPages.UnreadablePost(page.Html)), Has.All.EndsWith(": "));
+        }
+
+        [Test]
+        public void SmogonPages_ThreadPageOf20261126_NeedsTheNameLine()
+        {
+            // Since 2026-11-26 the name line is the only place of a post's author.
+            var page = Fixture("natdex-ubers-teambuilding-2026-11-26-excerpt.html");
+            var second = page.LastIndexOf("<article class=\"message js-post");
+            page = page[..second] + Regex.Replace(page[second..], "\n[^\n]*<h4 class=\"message-name\">[^\n]*", "");
+
+            var error = Assert.Throws<UnexpectedPageException>(() => SmogonPages.EnsureThreadPage(page, "https://www.smogon.com/forums/threads/x.1/"))!;
+            Assert.That(error.Message, Does.Contain("post 2 has no author"));
+        }
+
         [Test]
         public void SmogonPages_BotCheckIsRecognized()
         {
