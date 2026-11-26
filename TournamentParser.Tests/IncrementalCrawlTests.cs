@@ -864,22 +864,23 @@ namespace TournamentParser.Tests
         }
 
         [Test]
-        public void SearchNotAvailable_ReadsThePagesDirectly()
+        public void SearchResultsThatCannotBeRead_StopTheCrawl_TheNextRunFindsTheReplay()
         {
             var section = Section("Tournaments", Tournaments);
             var tour = TourThread(1, 3, OldStart);
             section.Threads.Add(tour);
             Crawl();
 
-            _http.Map(TournamentsSearch, "<html><body><div class=\"blockMessage\">You must be logged-in to do that.</div></body></html>");
             tour.Pages[2].Add(ReplayPost(1, "Cat", 99, Newest()));
-            var longTour = TourThread(2, 8, DateTime.UtcNow.AddHours(-2));
-            section.Threads.Add(longTour);
-            var threads = Crawl();
+            // The results of Nov 26, 2026 with dates the parser cannot read, as the parser before then saw them.
+            _http.Map(TournamentsSearch, File.ReadAllText(Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "search-results-2026-11-26-excerpt.html"))
+                .Replace("timestamp=", "ts="));
+            var error = Assert.Throws<AggregateException>(() => Crawl())!;
+            Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
+            Assert.That(Requests, Is.EqualTo(new[] { FakeForum.IndexUrl, TournamentsSearch }), "no listing read");
 
-            Assert.That(Requests.Where(url => url.Contains("/search/")), Is.EqualTo(new[] { TournamentsSearch }), "no thread search either");
-            Assert.That(Requests, Has.Member(tour.Url + "page-3").And.Member(longTour.Url + "page-8"));
-            Assert.That(MatchSummary(Scan(threads)), Is.EqualTo(CompleteMatchSummary()));
+            _http = new FakeHttpMessageHandler();
+            Assert.That(MatchSummary(Scan(Crawl())), Has.Some.Contains("gen9ou-1099"));
         }
 
         [Test]

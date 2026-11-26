@@ -60,7 +60,6 @@ namespace TournamentParser.ThreadCollector
         private readonly List<string> _roots = [];
         private string? _forumIndex;
         private int _unexpectedThreadPagesInARow;
-        private bool _searchUnavailable;
 
         public SmogonThreadCollector() : this((IDistributedCache?)null)
         {
@@ -83,7 +82,7 @@ namespace TournamentParser.ThreadCollector
 
         private HttpClient Http => _options.HttpClient ?? Common.HttpClient;
 
-        private bool SearchAllowed => _options.UseSearch && !_options.FullRefresh && !_searchUnavailable;
+        private bool SearchAllowed => _options.UseSearch && !_options.FullRefresh;
 
         public Task<IDictionary<string, List<string>>> GetThreadsForForums() =>
             CollectAsync(["Tournaments"], new Dictionary<string, string>
@@ -256,11 +255,6 @@ namespace TournamentParser.ThreadCollector
             // Result pages are read back to the last run (an hour of margin for clock differences); the date filter is the
             // day before, as Smogon reads it in its own time zone.
             var result = await _postSearch.SearchForumsAsync(nodeIds, lastRun.Date.AddDays(-1), lastRun - TimeSpan.FromHours(1)).ConfigureAwait(false);
-            if (result == null)
-            {
-                _searchUnavailable = true;
-                return null;
-            }
             return new ForumSearch(
                 nodeIds.Where(nodeId => !result.Uncovered.Contains(nodeId)).ToHashSet(),
                 startedAt,
@@ -668,7 +662,6 @@ namespace TournamentParser.ThreadCollector
                     }
                     else
                     {
-                        _searchUnavailable |= outcome == PostSearch.ThreadSearchOutcome.Unavailable;
                         pagesToRead.UnionWith(candidates);
                     }
                 }

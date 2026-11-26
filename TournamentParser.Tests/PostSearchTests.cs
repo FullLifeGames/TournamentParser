@@ -207,13 +207,21 @@ namespace TournamentParser.Tests
             Assert.That(result!.Hits, Has.Count.EqualTo(10));
         }
 
-        [Test]
-        public void SearchNotAllowedForGuests_IsNoResult()
+        [TestCase("no search result could be read")]
+        [TestCase("You must be logged-in to do that.")]
+        public void AnswerThatIsNeitherResultsNorNoResults_StopsTheCrawl(string reason)
         {
-            var search = new PostSearch(_ => Task.FromResult("<html><body><div class=\"blockMessage\">You must be logged-in to do that.</div></body></html>"));
+            // The results of Nov 26, 2026 with dates the parser cannot read, as the parser before then saw them; or a message.
+            var html = reason.StartsWith("no search result")
+                ? Fixture("search-results-2026-11-26-excerpt.html").Replace("timestamp=", "ts=")
+                : $"<html><body><div class=\"blockMessage\">{reason}</div></body></html>";
+            var search = new PostSearch(_ => Task.FromResult(html));
 
-            Assert.That(search.SearchForumsAsync([34], null).Result, Is.Null);
-            Assert.That(search.SearchThreadAsync(1, 5).Result.Outcome, Is.EqualTo(PostSearch.ThreadSearchOutcome.Unavailable));
+            var error = Assert.Throws<AggregateException>(() => search.SearchForumsAsync([34], null).Wait())!;
+            Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
+            Assert.That(error.InnerException!.Message, Does.Contain(reason));
+            error = Assert.Throws<AggregateException>(() => search.SearchThreadAsync(1, 5).Wait())!;
+            Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
         }
 
         [Test]
