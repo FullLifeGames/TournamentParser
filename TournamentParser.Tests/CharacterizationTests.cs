@@ -827,6 +827,23 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void ForumListingOf20261126_ReadsTheDatesInDynamicTime()
+        {
+            // Since Nov 26, 2026 the <time> tags carry no data-timestamp; a <dynamic-time timestamp> inside them does.
+            var listing = Fixture("tournaments-listing-2026-11-26-excerpt.html");
+
+            Assert.That(ForumPageParser.ParseNodes(listing).Single().LatestPostTimestamp, Is.EqualTo(1795669950));
+            var threads = ForumPageParser.ParseThreads(listing);
+            Assert.That(threads.Select(thread => (thread.ThreadId, thread.LatestPostTimestamp, thread.Sticky, thread.Locked, thread.LastPage)), Is.EqualTo(new[]
+            {
+                (3707805L, 1663091574L, true, true, 1),
+                (3781440L, 1777217381L, false, true, 8),
+                (3736764L, 1772980014L, false, false, 1),
+            }));
+            Assert.That(threads[2].LatestPostDisplayDate, Is.EqualTo("Mar 8, 2026 at 10:26 AM"));
+        }
+
+        [Test]
         public void ExtractImportantLines_KeepsTheSameLinesAsAFullScan()
         {
             // The crawl state stores these lines per page; parsing them must give what parsing the whole thread gives.

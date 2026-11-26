@@ -264,8 +264,8 @@ namespace TournamentParser.ThreadCollector
         [GeneratedRegex("<li>Post #([\\d,.]+)</li>")]
         private static partial Regex PositionRegex();
 
-        [GeneratedRegex("<time\\s[^>]*data-timestamp=\"(\\d+)\"")]
-        private static partial Regex TimestampRegex();
+        [GeneratedRegex("<time\\s")]
+        private static partial Regex TimeRegex();
 
         // Forums without node ID in their URL (".../forums/gen1/") too
         [GeneratedRegex("Forum: <a href=\"(/forums/forums/[^\"]+/)\"")]
@@ -297,9 +297,9 @@ namespace TournamentParser.ThreadCollector
         private static SearchHit? ParseItem(string block)
         {
             var title = TitleRegex().Match(block);
-            var timestamp = TimestampRegex().Match(block);
+            var time = TimeRegex().Match(block);
             var forum = ForumRegex().Match(block);
-            if (!title.Success || !timestamp.Success || !forum.Success)
+            if (!title.Success || !time.Success || SmogonPages.GetTimestamp(block, time.Index) is not long timestamp || !forum.Success)
             {
                 return null;
             }
@@ -317,7 +317,7 @@ namespace TournamentParser.ThreadCollector
                 ThreadUrl: Common.SmogonBaseUrl + title.Groups[1].Value,
                 PostId: postId,
                 Position: position,
-                PostDate: DateTimeOffset.FromUnixTimeSeconds(long.Parse(timestamp.Groups[1].Value)).UtcDateTime,
+                PostDate: DateTimeOffset.FromUnixTimeSeconds(timestamp).UtcDateTime,
                 ForumUrl: Common.SmogonBaseUrl + WebUtility.HtmlDecode(forum.Groups[1].Value));
         }
     }

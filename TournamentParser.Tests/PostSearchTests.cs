@@ -68,6 +68,22 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void Parse_ResultPageOf20261126_ReadsTheDatesInDynamicTime()
+        {
+            // Since Nov 26, 2026 the <time> tags carry no data-timestamp; a <dynamic-time timestamp> inside them does.
+            var hits = SearchResultParser.Parse(Fixture("search-results-2026-11-26-excerpt.html"), out var next);
+
+            Assert.That(hits, Is.EqualTo(new[]
+            {
+                new SearchHit(3712239, "https://www.smogon.com/forums/threads/national-dex-uu-team-bazaar.3712239/", 11201488, 103,
+                    DateTimeOffset.FromUnixTimeSeconds(1795501874).UtcDateTime, "https://www.smogon.com/forums/forums/national-dex-uu.859/"),
+                new SearchHit(3732644, "https://www.smogon.com/forums/threads/sv-ou-metagame-discussion-v4.3732644/", 11201487, 22242,
+                    DateTimeOffset.FromUnixTimeSeconds(1795501821).UtcDateTime, "https://www.smogon.com/forums/forums/overused.726/"),
+            }));
+            Assert.That(next, Is.Null);
+        }
+
+        [Test]
         public void Parse_LastPageOfAThreadSearch_HasNoNextPage()
         {
             var hits = SearchResultParser.Parse(Fixture("search-uu-open-xii-r2-replays-2026-11-13-page-8.html"), out var next);
