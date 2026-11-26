@@ -588,6 +588,39 @@ namespace TournamentParser.Tests
             Assert.That(error.InnerException!.Message, Does.Contain("the subforum " + Url(TourAlpha) + " is linked, but could not be read"));
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ListingWithoutReadableThreads_StopsTheCrawl(bool crawledBefore)
+        {
+            var section = Section("Tournaments", Tournaments);
+            // Empty for guests, like OM Submissions: its listing does not stop the crawl.
+            Sub(section, "Tour Alpha", TourAlpha);
+            var thread = TourThread(1, 1, OldStart);
+            section.Threads.Add(thread);
+            if (crawledBefore)
+            {
+                Crawl();
+                thread.Pages[0].Add(ReplayPost(1, "Cat", 2, Newest()));
+            }
+            _forum.Serve(_http);
+            // The listing of Nov 26, 2026 with dates the parser cannot read, as the parser before then saw it.
+            var listing = File.ReadAllText(Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "tournaments-listing-2026-11-26-excerpt.html"))
+                .Replace("timestamp=", "ts=");
+            if (crawledBefore)
+            {
+                // A single page: only the stored threads tell that the forum is not empty.
+                var nav = listing.IndexOf("<nav class=\"pageNavWrapper");
+                listing = listing.Remove(nav, listing.IndexOf("</nav>", nav) + "</nav>".Length - nav);
+            }
+            _http.Map(Url(Tournaments), listing);
+
+            var collector = new SmogonThreadCollector(_cache, Options());
+            var error = Assert.Throws<AggregateException>(() => collector.GetGeneralThreadsForForums("Tournaments").Wait())!;
+            Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
+            Assert.That(error.InnerException!.Message, Does.Contain("no thread could be read from the listing"));
+            Assert.That(new CrawlStateStore(_cache).GetForum(Url(Tournaments))?.Threads.Keys, crawledBefore ? Is.EqualTo(new[] { 1L }) : Is.Null);
+        }
+
         [Test]
         public void SubforumMovedElsewhere_DropsOutWithoutStoppingTheCrawl()
         {

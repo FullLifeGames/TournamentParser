@@ -326,7 +326,14 @@ namespace TournamentParser.ThreadCollector
 
                 var reachedKnownThreads = false;
                 var oldestOnPage = long.MaxValue;
-                foreach (var item in ForumPageParser.ParseThreads(site))
+                var items = ForumPageParser.ParseThreads(site);
+                // A listing with more pages, or of a forum that listed threads before, shows threads: none read means changed
+                // markup, and a walk to the end would empty the forum's thread list. Some forums are empty for guests.
+                if (items.Count == 0 && (pages > 1 || forum.Threads.Count > 0))
+                {
+                    throw new UnexpectedPageException(pageUrl, "no thread could be read from the listing");
+                }
+                foreach (var item in items)
                 {
                     listed.Add(item);
                     newWatermark = Math.Max(newWatermark, item.LatestPostTimestamp);
