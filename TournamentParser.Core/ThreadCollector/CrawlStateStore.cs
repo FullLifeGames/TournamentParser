@@ -17,7 +17,13 @@ namespace TournamentParser.ThreadCollector
     /// </summary>
     internal class CrawlStateStore
     {
-        private const string KeyPrefix = "tp:v3:";
+        public const string KeyPrefix = "tp:v3:";
+
+        /// <summary>Followed by the forum URL.</summary>
+        public const string ForumKeyPrefix = KeyPrefix + "forum:";
+
+        /// <summary>Followed by the thread ID.</summary>
+        public const string ThreadKeyPrefix = KeyPrefix + "thread:";
 
         private readonly IDistributedCache _cache;
 
@@ -26,13 +32,13 @@ namespace TournamentParser.ThreadCollector
             _cache = cache;
         }
 
-        public ForumCrawlState? GetForum(string forumUrl) => Get<ForumCrawlState>(KeyPrefix + "forum:" + forumUrl);
+        public ForumCrawlState? GetForum(string forumUrl) => Get<ForumCrawlState>(ForumKeyPrefix + forumUrl);
 
-        public void SetForum(string forumUrl, ForumCrawlState state) => Set(KeyPrefix + "forum:" + forumUrl, state);
+        public void SetForum(string forumUrl, ForumCrawlState state) => Set(ForumKeyPrefix + forumUrl, state);
 
-        public ThreadCrawlState? GetThread(long threadId) => Get<ThreadCrawlState>(KeyPrefix + "thread:" + threadId);
+        public ThreadCrawlState? GetThread(long threadId) => Get<ThreadCrawlState>(ThreadKeyPrefix + threadId);
 
-        public void SetThread(long threadId, ThreadCrawlState state) => Set(KeyPrefix + "thread:" + threadId, state);
+        public void SetThread(long threadId, ThreadCrawlState state) => Set(ThreadKeyPrefix + threadId, state);
 
         /// <summary>The lines of a thread page that the scanner needs (see <c>SmogonThreadScanner.ExtractImportantLines</c>).</summary>
         public string? GetPage(long threadId, int page) => GetString(PageKey(threadId, page));

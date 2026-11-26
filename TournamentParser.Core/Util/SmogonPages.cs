@@ -191,5 +191,16 @@ namespace TournamentParser.Util
             title = title[(title.LastIndexOf('>') + 1)..];
             return WebUtility.HtmlDecode(title).Trim();
         }
+
+        // Until 2026-11-25 the <time> tag carried data-timestamp; since 2026-11-26 a <dynamic-time timestamp> inside it does.
+        [GeneratedRegex("\\G<time\\b[^>]*?(?:\\sdata-timestamp=\"(\\d+)\"|>\\s*<dynamic-time\\b[^>]*?\\stimestamp=\"(\\d+)\")")]
+        private static partial Regex TimeTagTimestampRegex();
+
+        /// <summary>The Unix time (seconds) of the &lt;time&gt; tag that starts at <paramref name="index"/>; null if it shows none.</summary>
+        public static long? GetTimestamp(string html, int index)
+        {
+            var match = TimeTagTimestampRegex().Match(html, index);
+            return match.Success ? long.Parse(match.Groups[match.Groups[1].Success ? 1 : 2].Value) : null;
+        }
     }
 }

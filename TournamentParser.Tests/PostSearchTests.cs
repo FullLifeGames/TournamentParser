@@ -68,6 +68,22 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void Parse_ResultPageOf20261126_ReadsTheDatesInDynamicTime()
+        {
+            // Since Nov 26, 2026 the <time> tags carry no data-timestamp; a <dynamic-time timestamp> inside them does.
+            var hits = SearchResultParser.Parse(Fixture("search-results-2026-11-26-excerpt.html"), out var next);
+
+            Assert.That(hits, Is.EqualTo(new[]
+            {
+                new SearchHit(3712239, "https://www.smogon.com/forums/threads/national-dex-uu-team-bazaar.3712239/", 11201488, 103,
+                    DateTimeOffset.FromUnixTimeSeconds(1795501874).UtcDateTime, "https://www.smogon.com/forums/forums/national-dex-uu.859/"),
+                new SearchHit(3732644, "https://www.smogon.com/forums/threads/sv-ou-metagame-discussion-v4.3732644/", 11201487, 22242,
+                    DateTimeOffset.FromUnixTimeSeconds(1795501821).UtcDateTime, "https://www.smogon.com/forums/forums/overused.726/"),
+            }));
+            Assert.That(next, Is.Null);
+        }
+
+        [Test]
         public void Parse_LastPageOfAThreadSearch_HasNoNextPage()
         {
             var hits = SearchResultParser.Parse(Fixture("search-uu-open-xii-r2-replays-2026-11-13-page-8.html"), out var next);
@@ -77,17 +93,22 @@ namespace TournamentParser.Tests
             Assert.That(next, Is.Null);
         }
 
-        [Test]
-        public void SearchWithoutResults_IsAnEmptyResult()
+        [TestCase("search-no-results-2026-11-13.html")]
+        [TestCase("search-no-results-2026-11-26-excerpt.html")]
+        public void SearchWithoutResults_IsAnEmptyResult(string fixture)
         {
-            var html = Fixture("search-no-results-2026-11-13.html");
+            var html = Fixture(fixture);
             Assert.That(SearchResultParser.Parse(html, out var next), Is.Empty);
             Assert.That(next, Is.Null);
 
-            var result = new PostSearch(_ => Task.FromResult(html)).SearchForumsAsync([34], new DateTime(2026, 11, 12)).Result;
+            var search = new PostSearch(_ => Task.FromResult(html));
+            var result = search.SearchForumsAsync([34], new DateTime(2026, 11, 12)).Result;
 
             Assert.That(result, Is.Not.Null);
             Assert.That(result!.Hits, Is.Empty);
+            var (outcome, threadHits) = search.SearchThreadAsync(1, 5).Result;
+            Assert.That(outcome, Is.EqualTo(PostSearch.ThreadSearchOutcome.Found));
+            Assert.That(threadHits, Is.Empty);
         }
 
         /// <summary>A forum with the given number of replay posts per day, from 2026-10-01 on, 25 posts per thread page.</summary>
@@ -191,13 +212,21 @@ namespace TournamentParser.Tests
             Assert.That(result!.Hits, Has.Count.EqualTo(10));
         }
 
-        [Test]
-        public void SearchNotAllowedForGuests_IsNoResult()
+        [TestCase("no search result could be read")]
+        [TestCase("You must be logged-in to do that.")]
+        public void AnswerThatIsNeitherResultsNorNoResults_StopsTheCrawl(string reason)
         {
-            var search = new PostSearch(_ => Task.FromResult("<html><body><div class=\"blockMessage\">You must be logged-in to do that.</div></body></html>"));
+            // The results of Nov 26, 2026 with dates the parser cannot read, as the parser before then saw them; or a message.
+            var html = reason.StartsWith("no search result")
+                ? Fixture("search-results-2026-11-26-excerpt.html").Replace("timestamp=", "ts=")
+                : $"<html><body><div class=\"blockMessage\">{reason}</div></body></html>";
+            var search = new PostSearch(_ => Task.FromResult(html));
 
-            Assert.That(search.SearchForumsAsync([34], null).Result, Is.Null);
-            Assert.That(search.SearchThreadAsync(1, 5).Result.Outcome, Is.EqualTo(PostSearch.ThreadSearchOutcome.Unavailable));
+            var error = Assert.Throws<AggregateException>(() => search.SearchForumsAsync([34], null).Wait())!;
+            Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
+            Assert.That(error.InnerException!.Message, Does.Contain(reason));
+            error = Assert.Throws<AggregateException>(() => search.SearchThreadAsync(1, 5).Wait())!;
+            Assert.That(error.InnerException, Is.InstanceOf<UnexpectedPageException>());
         }
 
         [Test]

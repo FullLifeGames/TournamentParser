@@ -222,7 +222,7 @@ namespace TournamentParser.Tests.TestSupport
                 {
                     sb.Append($"\t\t<li>Post #{hit.Position:N0}</li>\n");
                 }
-                sb.Append($"\t\t<li><time  class=\"u-dt\" dir=\"auto\" datetime=\"{hit.Date:yyyy-MM-ddTHH:mm:ssZ}\" data-timestamp=\"{timestamp}\" title=\"x\">x</time></li>\n");
+                sb.Append($"\t\t<li><time  class=\"u-dt\" dir=\"auto\" datetime=\"{hit.Date:yyyy-MM-ddTHH:mm:ssZ}\" title=\"x\"><dynamic-time timestamp=\"{timestamp}\" date=\"x\" time=\"x\">x</dynamic-time></time></li>\n");
                 sb.Append($"\t\t<li>Forum: <a href=\"{hit.Forum.Path}\">{WebUtility.HtmlEncode(hit.Forum.Title)}</a></li>\n");
                 sb.Append("\t</ul>\n</li>\n");
             }
@@ -304,7 +304,7 @@ namespace TournamentParser.Tests.TestSupport
             if (latest > 0)
             {
                 var date = DateTimeOffset.FromUnixTimeSeconds(latest).UtcDateTime;
-                sb.Append($"\t\t\t\t<li><time  class=\"node-extra-date u-dt\" dir=\"auto\" datetime=\"{date:yyyy-MM-ddTHH:mm:ssZ}\" data-timestamp=\"{latest}\" title=\"{ToDateTitle(date)}\">x</time></li>\n");
+                sb.Append($"\t\t\t\t<li><time  class=\"node-extra-date u-dt\" dir=\"auto\" datetime=\"{date:yyyy-MM-ddTHH:mm:ssZ}\" title=\"{ToDateTitle(date)}\"><dynamic-time timestamp=\"{latest}\" date=\"x\" time=\"x\">x</dynamic-time></time></li>\n");
             }
             else
             {
@@ -343,7 +343,7 @@ namespace TournamentParser.Tests.TestSupport
             sb.Append("\t\t<div class=\"structItem-cell structItem-cell--latest\">\n");
             var latest = thread.LatestPostTimestamp;
             var date = DateTimeOffset.FromUnixTimeSeconds(latest).UtcDateTime;
-            sb.Append($"\t\t\t<a href=\"{thread.Path}latest\" rel=\"nofollow\"><time  class=\"structItem-latestDate u-dt\" dir=\"auto\" datetime=\"{date:yyyy-MM-ddTHH:mm:ssZ}\" data-timestamp=\"{latest}\" data-date=\"x\" data-time=\"x\" title=\"{thread.LatestPost.DateTitle}\">x</time></a>\n");
+            sb.Append($"\t\t\t<a href=\"{thread.Path}latest\" rel=\"nofollow\"><time  class=\"structItem-latestDate u-dt\" dir=\"auto\" datetime=\"{date:yyyy-MM-ddTHH:mm:ssZ}\" title=\"{thread.LatestPost.DateTitle}\"><dynamic-time timestamp=\"{latest}\" date=\"x\" time=\"x\">x</dynamic-time></time></a>\n");
             sb.Append("\t\t</div>\n\t</div>\n");
         }
 

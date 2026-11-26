@@ -735,6 +735,31 @@ namespace TournamentParser.Tests
             Assert.That(ScanSummary(ScanStored(storedMixed)), Is.EqualTo(ScanSummary(ScanStored(storedOld))));
         }
 
+        [Test]
+        public void ThreadPageOf20261126_ReadsAuthorsAndPostDates()
+        {
+            // Since Nov 26, 2026 a post has no data-author and its user link no data-user-id.
+            const string url = "https://www.smogon.com/forums/threads/national-dex-ubers-teambuilding-competition.3732930/";
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(url, Fixture("natdex-ubers-teambuilding-2026-11-26-excerpt.html"));
+            Common.HttpClient = new HttpClient(fake);
+            var scanner = new SmogonThreadScanner();
+            var result = scanner.AnalyzeTopic(url, CancellationToken.None).Result!;
+            var stored = new SmogonThreadScanner();
+            stored.AnalyzeTopic(url, result.CollectedLinks, CancellationToken.None).Wait();
+
+            // The date of the second post, not of its edit.
+            Assert.That(result.LastPost, Is.EqualTo(new DateTime(2026, 11, 10, 11, 40, 0)));
+            foreach (var users in new[] { scanner.NameUserTranslation, stored.NameUserTranslation })
+            {
+                Assert.That(users.Select(kv => $"{kv.Key} {kv.Value.NormalName} #{kv.Value.Id} {kv.Value.ProfileLink}"), Is.EquivalentTo(new[]
+                {
+                    "theshowdownhero TheShowdownHero #436537 /forums/members/theshowdownhero.436537/",
+                    "sami Sami #604820 /forums/members/sami.604820/",
+                }));
+            }
+        }
+
         #endregion
 
         #region Collector
@@ -824,6 +849,23 @@ namespace TournamentParser.Tests
             Assert.That(first.Locked, Is.True);
             Assert.That(first.LatestPostTimestamp, Is.EqualTo(1790547298));
             Assert.That(first.LatestPostDisplayDate, Is.EqualTo("Sep 27, 2026 at 6:14 PM"));
+        }
+
+        [Test]
+        public void ForumListingOf20261126_ReadsTheDatesInDynamicTime()
+        {
+            // Since Nov 26, 2026 the <time> tags carry no data-timestamp; a <dynamic-time timestamp> inside them does.
+            var listing = Fixture("tournaments-listing-2026-11-26-excerpt.html");
+
+            Assert.That(ForumPageParser.ParseNodes(listing).Single().LatestPostTimestamp, Is.EqualTo(1795669950));
+            var threads = ForumPageParser.ParseThreads(listing);
+            Assert.That(threads.Select(thread => (thread.ThreadId, thread.LatestPostTimestamp, thread.Sticky, thread.Locked, thread.LastPage)), Is.EqualTo(new[]
+            {
+                (3707805L, 1663091574L, true, true, 1),
+                (3781440L, 1777217381L, false, true, 8),
+                (3736764L, 1772980014L, false, false, 1),
+            }));
+            Assert.That(threads[2].LatestPostDisplayDate, Is.EqualTo("Mar 8, 2026 at 10:26 AM"));
         }
 
         [Test]

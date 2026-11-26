@@ -60,7 +60,6 @@ namespace TournamentParser.ThreadCollector
         private readonly List<string> _roots = [];
         private string? _forumIndex;
         private int _unexpectedThreadPagesInARow;
-        private bool _searchUnavailable;
 
         public SmogonThreadCollector() : this((IDistributedCache?)null)
         {
@@ -83,7 +82,7 @@ namespace TournamentParser.ThreadCollector
 
         private HttpClient Http => _options.HttpClient ?? Common.HttpClient;
 
-        private bool SearchAllowed => _options.UseSearch && !_options.FullRefresh && !_searchUnavailable;
+        private bool SearchAllowed => _options.UseSearch && !_options.FullRefresh;
 
         public Task<IDictionary<string, List<string>>> GetThreadsForForums() =>
             CollectAsync(["Tournaments"], new Dictionary<string, string>
@@ -256,11 +255,6 @@ namespace TournamentParser.ThreadCollector
             // Result pages are read back to the last run (an hour of margin for clock differences); the date filter is the
             // day before, as Smogon reads it in its own time zone.
             var result = await _postSearch.SearchForumsAsync(nodeIds, lastRun.Date.AddDays(-1), lastRun - TimeSpan.FromHours(1)).ConfigureAwait(false);
-            if (result == null)
-            {
-                _searchUnavailable = true;
-                return null;
-            }
             return new ForumSearch(
                 nodeIds.Where(nodeId => !result.Uncovered.Contains(nodeId)).ToHashSet(),
                 startedAt,
@@ -326,7 +320,14 @@ namespace TournamentParser.ThreadCollector
 
                 var reachedKnownThreads = false;
                 var oldestOnPage = long.MaxValue;
-                foreach (var item in ForumPageParser.ParseThreads(site))
+                var items = ForumPageParser.ParseThreads(site);
+                // A listing with more pages, or of a forum that listed threads before, shows threads: none read means changed
+                // markup, and a walk to the end would empty the forum's thread list. Some forums are empty for guests.
+                if (items.Count == 0 && (pages > 1 || forum.Threads.Count > 0))
+                {
+                    throw new UnexpectedPageException(pageUrl, "no thread could be read from the listing");
+                }
+                foreach (var item in items)
                 {
                     listed.Add(item);
                     newWatermark = Math.Max(newWatermark, item.LatestPostTimestamp);
@@ -661,7 +662,6 @@ namespace TournamentParser.ThreadCollector
                     }
                     else
                     {
-                        _searchUnavailable |= outcome == PostSearch.ThreadSearchOutcome.Unavailable;
                         pagesToRead.UnionWith(candidates);
                     }
                 }

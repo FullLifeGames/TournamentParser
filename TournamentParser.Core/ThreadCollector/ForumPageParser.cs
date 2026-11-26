@@ -20,7 +20,7 @@ namespace TournamentParser.ThreadCollector
         [GeneratedRegex("<h3 class=\"node-title\">\\s*(?:<element-tooltip\\b[^>]*>\\s*)?<a href=\"([^\"]*/forums/forums/[^\"]+)\"[^>]*>([^<]*)</a>")]
         private static partial Regex NodeTitleRegex();
 
-        [GeneratedRegex("class=\"node-extra-date[^\"]*\"[^>]*data-timestamp=\"(\\d+)\"")]
+        [GeneratedRegex("<time\\s+class=\"node-extra-date")]
         private static partial Regex NodeLatestDateRegex();
 
         // Until 2026-11-13 with the class "subNodeLink--forum"; since then forums are known by their URL only.
@@ -37,9 +37,6 @@ namespace TournamentParser.ThreadCollector
 
         [GeneratedRegex("<time\\s+class=\"structItem-latestDate[^\"]*\"([^>]*)>")]
         private static partial Regex LatestDateRegex();
-
-        [GeneratedRegex("data-timestamp=\"(\\d+)\"")]
-        private static partial Regex TimestampRegex();
 
         [GeneratedRegex("title=\"([^\"]*)\"")]
         private static partial Regex TitleAttributeRegex();
@@ -72,7 +69,7 @@ namespace TournamentParser.ThreadCollector
                 {
                     Title = WebUtility.HtmlDecode(title.Groups[2].Value).Trim(),
                     Url = AbsoluteUrl(title.Groups[1].Value),
-                    LatestPostTimestamp = latest.Success ? long.Parse(latest.Groups[1].Value) : 0,
+                    LatestPostTimestamp = latest.Success ? SmogonPages.GetTimestamp(block, latest.Index) ?? 0 : 0,
                 });
             }
             return nodes;
@@ -117,12 +114,7 @@ namespace TournamentParser.ThreadCollector
             // Moved-thread redirects have no preview URL or latest post: skip them.
             var link = ThreadLinkRegex().Match(block);
             var latest = LatestDateRegex().Match(block);
-            if (!link.Success || !latest.Success)
-            {
-                return null;
-            }
-            var timestamp = TimestampRegex().Match(latest.Groups[1].Value);
-            if (!timestamp.Success)
+            if (!link.Success || !latest.Success || SmogonPages.GetTimestamp(block, latest.Index) is not long timestamp)
             {
                 return null;
             }
@@ -149,7 +141,7 @@ namespace TournamentParser.ThreadCollector
                 Title = WebUtility.HtmlDecode(link.Groups[3].Value).Trim(),
                 Sticky = block.Contains("structItem-status--sticky"),
                 Locked = block.Contains("structItem-status--locked"),
-                LatestPostTimestamp = long.Parse(timestamp.Groups[1].Value),
+                LatestPostTimestamp = timestamp,
                 LatestPostDisplayDate = displayDate.Success ? WebUtility.HtmlDecode(displayDate.Groups[1].Value) : "",
                 LastPage = lastPage,
             };

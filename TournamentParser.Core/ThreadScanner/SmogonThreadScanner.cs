@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using TournamentParser.Core.Data;
 using TournamentParser.Data;
@@ -50,6 +51,9 @@ namespace TournamentParser.ThreadScanner
         private readonly ConcurrentDictionary<int, byte> _spacedNameWordCounts = new();
 
         private const string ShowdownReplayString = "replay.pokemonshowdown.com/";
+
+        /// <summary>Since 2026-11-26 the name line of a post holds its author: id, profile link and name.</summary>
+        private static readonly Regex AuthorRegex = new("<h4 class=\"message-name\"><member-tooltip user-id=\"(\\d+)\"><a href=\"([^\"]*)\"[^>]*>(?:<span[^>]*>)?([^<]*)<");
 
         /// <summary>
         /// Parses the given threads. Threads with pages in the crawl state are parsed from there without any request;
@@ -296,6 +300,13 @@ namespace TournamentParser.ThreadScanner
                 lineDataHandler.PostedBy = line[(line.IndexOf("data-author") + 5)..];
                 lineDataHandler.PostedBy = lineDataHandler.PostedBy[(lineDataHandler.PostedBy.IndexOf(Common.Quotation) + 1)..];
                 lineDataHandler.PostedBy = lineDataHandler.PostedBy[..lineDataHandler.PostedBy.IndexOf(Common.Quotation)];
+            }
+            else if (AuthorRegex.Match(line) is { Success: true } author)
+            {
+                // Until 2026-11-25 the post carried data-author and the user link data-user-id.
+                lineDataHandler.DataUserId = int.Parse(author.Groups[1].Value);
+                lineDataHandler.UserLink = author.Groups[2].Value;
+                lineDataHandler.PostedBy = author.Groups[3].Value;
             }
             else
             {

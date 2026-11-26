@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using TournamentParser.Util;
@@ -72,16 +71,12 @@ namespace TournamentParser.ThreadCollector
         /// <summary>
         /// All replay posts in the forums <paramref name="nodeIds"/> and their subforums from <paramref name="since"/> on (a
         /// day), or at least those from <paramref name="knownBefore"/> on: result pages are read until they reach that time.
-        /// Null if guests cannot search.
         /// </summary>
-        public async Task<SearchResult?> SearchForumsAsync(IReadOnlyList<long> nodeIds, DateTime? since, DateTime? knownBefore = null)
+        public async Task<SearchResult> SearchForumsAsync(IReadOnlyList<long> nodeIds, DateTime? since, DateTime? knownBefore = null)
         {
             var hits = new Dictionary<(long ThreadId, long? PostId), SearchHit>();
             var uncovered = new HashSet<long>();
-            if (!await SearchRangeAsync(Filter.Forums(nodeIds), since, null, hits, uncovered, knownBefore).ConfigureAwait(false))
-            {
-                return null;
-            }
+            await SearchRangeAsync(Filter.Forums(nodeIds), since, null, hits, uncovered, knownBefore).ConfigureAwait(false);
             Console.WriteLine($"Searched replay posts{(since != null ? $" since {since:yyyy-MM-dd}" : "")} in {nodeIds.Count} forum(s): {hits.Count} post(s)");
             return new SearchResult(hits.Values.ToList(), uncovered);
         }
@@ -95,8 +90,6 @@ namespace TournamentParser.ThreadCollector
             /// search shows.
             /// </summary>
             TooManyResults,
-            /// <summary>Guests cannot search.</summary>
-            Unavailable,
         }
 
         /// <summary>
@@ -108,10 +101,6 @@ namespace TournamentParser.ThreadCollector
             var filter = Filter.Thread(threadId);
             var url = Url(ReplayQuery, filter, null, null);
             var html = await GetResultPageAsync(url).ConfigureAwait(false);
-            if (html == null)
-            {
-                return (ThreadSearchOutcome.Unavailable, []);
-            }
             if (SmogonPages.GetNumberOfPages(html) > maxResultPages)
             {
                 return (ThreadSearchOutcome.TooManyResults, []);
@@ -119,15 +108,11 @@ namespace TournamentParser.ThreadCollector
 
             var hits = new Dictionary<(long ThreadId, long? PostId), SearchHit>();
             var (found, cutOff) = await ReadResultPagesAsync(html, 1).ConfigureAwait(false);
-            if (found == null)
-            {
-                return (ThreadSearchOutcome.Unavailable, []);
-            }
             AddHits(hits, found);
             var uncovered = new HashSet<long>();
-            if (cutOff && !await SearchOlderAsync(filter, null, found, hits, uncovered).ConfigureAwait(false))
+            if (cutOff)
             {
-                return (ThreadSearchOutcome.Unavailable, []);
+                await SearchOlderAsync(filter, null, found, hits, uncovered).ConfigureAwait(false);
             }
             return uncovered.Count > 0
                 ? (ThreadSearchOutcome.TooManyResults, [])
@@ -144,52 +129,48 @@ namespace TournamentParser.ThreadCollector
 
         /// <summary>
         /// Pages through the results by date. A day with more results than a search shows is split by forum; a single forum
-        /// with such a day is <paramref name="uncovered"/>. False if guests cannot search.
+        /// with such a day is <paramref name="uncovered"/>.
         /// </summary>
-        private async Task<bool> SearchRangeAsync(Filter filter, DateTime? since, DateTime? before, Dictionary<(long, long?), SearchHit> hits, HashSet<long> uncovered,
+        private async Task SearchRangeAsync(Filter filter, DateTime? since, DateTime? before, Dictionary<(long, long?), SearchHit> hits, HashSet<long> uncovered,
             DateTime? knownBefore = null)
         {
             var html = await GetResultPageAsync(Url(ReplayQuery, filter, since, before)).ConfigureAwait(false);
-            if (html == null)
-            {
-                return false;
-            }
             var (found, cutOff) = await ReadResultPagesAsync(html, 1, knownBefore).ConfigureAwait(false);
-            if (found == null)
-            {
-                return false;
-            }
             AddHits(hits, found);
-            return !cutOff || await SearchOlderAsync(filter, since, found, hits, uncovered, before, knownBefore).ConfigureAwait(false);
+            if (cutOff)
+            {
+                await SearchOlderAsync(filter, since, found, hits, uncovered, before, knownBefore).ConfigureAwait(false);
+            }
         }
 
         /// <summary>A search was cut off: searches again for the days up to its oldest result (results come newest first).</summary>
-        private async Task<bool> SearchOlderAsync(Filter filter, DateTime? since, List<SearchHit> found, Dictionary<(long, long?), SearchHit> hits, HashSet<long> uncovered,
+        private async Task SearchOlderAsync(Filter filter, DateTime? since, List<SearchHit> found, Dictionary<(long, long?), SearchHit> hits, HashSet<long> uncovered,
             DateTime? before = null, DateTime? knownBefore = null)
         {
             var oldestDay = found.Count > 0 ? found.Min(hit => hit.PostDate).Date.AddDays(1) : (DateTime?)null;
             if (oldestDay != null && (before == null || oldestDay < before))
             {
                 Console.WriteLine($"  {hits.Count} replay post(s) so far, searching before {oldestDay:yyyy-MM-dd}");
-                return await SearchRangeAsync(filter, since, oldestDay, hits, uncovered, knownBefore).ConfigureAwait(false);
+                await SearchRangeAsync(filter, since, oldestDay, hits, uncovered, knownBefore).ConfigureAwait(false);
+                return;
             }
             if (filter.NodeIds.Count > 1)
             {
                 var half = filter.NodeIds.Count / 2;
-                return await SearchRangeAsync(Filter.Forums(filter.NodeIds.Take(half).ToList()), since, before, hits, uncovered, knownBefore).ConfigureAwait(false)
-                    && await SearchRangeAsync(Filter.Forums(filter.NodeIds.Skip(half).ToList()), since, before, hits, uncovered, knownBefore).ConfigureAwait(false);
+                await SearchRangeAsync(Filter.Forums(filter.NodeIds.Take(half).ToList()), since, before, hits, uncovered, knownBefore).ConfigureAwait(false);
+                await SearchRangeAsync(Filter.Forums(filter.NodeIds.Skip(half).ToList()), since, before, hits, uncovered, knownBefore).ConfigureAwait(false);
+                return;
             }
             var what = filter.ThreadId is long threadId ? "Thread " + threadId : "Forum " + filter.NodeIds[0];
             Console.WriteLine($"{what} has more than {MaxResultPages * 10} replay posts on a single day; its pages are read instead.");
             uncovered.Add(filter.ThreadId ?? filter.NodeIds[0]);
-            return true;
         }
 
         /// <summary>
         /// The hits of a search, starting with its first result page, up to the first page that reaches back before
         /// <paramref name="knownBefore"/>; whether the search was cut off before that.
         /// </summary>
-        private async Task<(List<SearchHit>? Hits, bool CutOff)> ReadResultPagesAsync(string firstPage, int pagesRead, DateTime? knownBefore = null)
+        private async Task<(List<SearchHit> Hits, bool CutOff)> ReadResultPagesAsync(string firstPage, int pagesRead, DateTime? knownBefore = null)
         {
             var hits = new List<SearchHit>(SearchResultParser.Parse(firstPage, out var url));
             var pages = pagesRead;
@@ -197,10 +178,6 @@ namespace TournamentParser.ThreadCollector
             while (url != null && pages < MaxResultPages && !Reached())
             {
                 var html = await GetResultPageAsync(url).ConfigureAwait(false);
-                if (html == null)
-                {
-                    return (null, false);
-                }
                 pages++;
                 hits.AddRange(SearchResultParser.Parse(html, out url));
             }
@@ -213,26 +190,23 @@ namespace TournamentParser.ThreadCollector
         [GeneratedRegex("<div class=\"blockMessage[^\"]*\">\\s*([^<]+)")]
         private static partial Regex MessageRegex();
 
-        /// <summary>A result page; null (after a message) if Smogon answers with anything else.</summary>
-        private async Task<string?> GetResultPageAsync(string url)
+        /// <summary>
+        /// A page of results, or Smogon's "No results found.". Anything else stops the crawl: the replay posts of a search that
+        /// cannot be read would go missing without a trace.
+        /// </summary>
+        private async Task<string> GetResultPageAsync(string url)
         {
             for (var attempt = 0; ; attempt++)
             {
-                string html;
-                try
-                {
-                    html = await _getPage(url).ConfigureAwait(false);
-                }
-                catch (HttpRequestException e)
-                {
-                    Console.WriteLine($"Search not available ({e.Message}); thread pages are read instead.");
-                    return null;
-                }
+                var html = await _getPage(url).ConfigureAwait(false);
                 if (SmogonPages.IsBotCheck(html))
                 {
                     throw new SmogonAccessBlockedException(url);
                 }
-                if (SmogonPages.HasTemplate(html, "search_results"))
+                // Such as "The search could not be completed because the search keywords were too short, too long, or too common."
+                var message = MessageRegex().Matches(html).Select(match => match.Groups[1].Value.Trim())
+                    .FirstOrDefault(text => !text.Contains("JavaScript") && !text.Contains("out of date browser"));
+                if (SmogonPages.HasTemplate(html, "search_results") && (message == "No results found." || SearchResultParser.Parse(html, out _).Count > 0))
                 {
                     return html;
                 }
@@ -243,11 +217,7 @@ namespace TournamentParser.ThreadCollector
                     await _delay(TimeSpan.FromSeconds(int.Parse(flood.Groups[1].Value) + 1)).ConfigureAwait(false);
                     continue;
                 }
-                // Such as "The search could not be completed because the search keywords were too short, too long, or too common."
-                var message = MessageRegex().Matches(html).Select(match => match.Groups[1].Value.Trim())
-                    .FirstOrDefault(text => !text.Contains("JavaScript") && !text.Contains("out of date browser"));
-                Console.WriteLine($"Search not available ({message ?? url + " answered without results page"}); thread pages are read instead.");
-                return null;
+                throw new UnexpectedPageException(url, message != null ? $"the search answered \"{message}\"" : "no search result could be read");
             }
         }
     }
@@ -264,8 +234,8 @@ namespace TournamentParser.ThreadCollector
         [GeneratedRegex("<li>Post #([\\d,.]+)</li>")]
         private static partial Regex PositionRegex();
 
-        [GeneratedRegex("<time\\s[^>]*data-timestamp=\"(\\d+)\"")]
-        private static partial Regex TimestampRegex();
+        [GeneratedRegex("<time\\s")]
+        private static partial Regex TimeRegex();
 
         // Forums without node ID in their URL (".../forums/gen1/") too
         [GeneratedRegex("Forum: <a href=\"(/forums/forums/[^\"]+/)\"")]
@@ -297,9 +267,9 @@ namespace TournamentParser.ThreadCollector
         private static SearchHit? ParseItem(string block)
         {
             var title = TitleRegex().Match(block);
-            var timestamp = TimestampRegex().Match(block);
+            var time = TimeRegex().Match(block);
             var forum = ForumRegex().Match(block);
-            if (!title.Success || !timestamp.Success || !forum.Success)
+            if (!title.Success || !time.Success || SmogonPages.GetTimestamp(block, time.Index) is not long timestamp || !forum.Success)
             {
                 return null;
             }
@@ -317,7 +287,7 @@ namespace TournamentParser.ThreadCollector
                 ThreadUrl: Common.SmogonBaseUrl + title.Groups[1].Value,
                 PostId: postId,
                 Position: position,
-                PostDate: DateTimeOffset.FromUnixTimeSeconds(long.Parse(timestamp.Groups[1].Value)).UtcDateTime,
+                PostDate: DateTimeOffset.FromUnixTimeSeconds(timestamp).UtcDateTime,
                 ForumUrl: Common.SmogonBaseUrl + WebUtility.HtmlDecode(forum.Groups[1].Value));
         }
     }
