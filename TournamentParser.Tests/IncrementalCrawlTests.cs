@@ -622,6 +622,40 @@ namespace TournamentParser.Tests
         }
 
         [Test]
+        public void RebuildForumThreads_RepairsWhatTheRunOf20261126Left()
+        {
+            var section = Section("Tournaments", Tournaments);
+            Sub(section, "Tour Alpha", TourAlpha).Threads.Add(TourThread(1, 1, OldStart));
+            var tour = TourThread(2, 3, OldStart);
+            section.Threads.Add(tour);
+            Crawl();
+            var store = new CrawlStateStore(_cache);
+            var lastGoodRun = store.GetForum(Url(Tournaments))!.CoveredUntil!.Value;
+
+            // The run of 2026-11-26 missed a new replay post, emptied the thread lists and took the forums as up to date.
+            tour.Pages[2].Add(ReplayPost(2, "Cat", 99, Newest()));
+            foreach (var node in ForumPageParser.ParseNodes(_forum.IndexPage()).Concat(ForumPageParser.ParseNodes(_forum.ListingPage(section, 1))))
+            {
+                var forum = store.GetForum(node.Url)!;
+                forum.Threads.Clear();
+                forum.NodeTimestamp = node.LatestPostTimestamp;
+                forum.OpenThreadsLatestPost = 0;
+                forum.CoveredUntil = DateTime.UtcNow;
+                store.SetForum(node.Url, forum);
+            }
+            Assert.That(Crawl().Values.SelectMany(threads => threads), Is.Empty);
+
+            var lines = CrawlStateRepair.RebuildForumThreads(_cache, _cache.Store.Keys, lastGoodRun, dryRun: true);
+            Assert.That(lines, Has.Member(Url(Tournaments) + ": 0 -> 1 thread(s)").And.Member(Url(TourAlpha) + ": 0 -> 1 thread(s)"));
+            Assert.That(store.GetForum(Url(Tournaments))!.Threads, Is.Empty, "a dry run writes nothing");
+
+            CrawlStateRepair.RebuildForumThreads(_cache, _cache.Store.Keys, lastGoodRun, dryRun: false);
+            var repaired = store.GetForum(Url(Tournaments))!;
+            Assert.That((repaired.NodeTimestamp, repaired.OpenThreadsLatestPost, repaired.CoveredUntil), Is.EqualTo((0L, (long?)null, (DateTime?)lastGoodRun)));
+            Assert.That(MatchSummary(Scan(Crawl())), Is.EqualTo(CompleteMatchSummary()), "with the missed replay post");
+        }
+
+        [Test]
         public void SubforumMovedElsewhere_DropsOutWithoutStoppingTheCrawl()
         {
             var section = Section("Tournaments", Tournaments);

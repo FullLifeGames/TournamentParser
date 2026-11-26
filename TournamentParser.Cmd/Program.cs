@@ -1,13 +1,16 @@
-﻿using NeoSmart.Caching.Sqlite;
+﻿using Microsoft.Data.Sqlite;
+using NeoSmart.Caching.Sqlite;
 using Newtonsoft.Json;
 using System.Globalization;
 using TournamentParser.Parser;
 using TournamentParser.ThreadCollector;
 using TournamentParser.Util;
 
+const string CachePath = "SmogonTournamentParser.db";
 const string Usage = """
     Usage: TournamentParser.Cmd [--full] [--no-search] [--delay <seconds>] [--recent-days <days>]
                                 [--max-requests <count>] [--headed]
+           TournamentParser.Cmd --repair-forum-threads <covered-until> [--dry-run]
 
       --full                  Ignore the stored state and read every listing and thread page again.
       --no-search             Do not ask Smogon's search which new posts hold replays; read the new
@@ -18,6 +21,11 @@ const string Usage = """
       --max-requests <count>  Stop after this many requests; the next run continues from there
                               (default 0, no limit).
       --headed                Show the browser window that passes the bot check.
+      --repair-forum-threads <covered-until>
+                              Instead of a run: give every forum back the stored threads that its listing
+                              showed last (the run of 2026-11-26 dropped them all), list every forum in the
+                              next run and search from <covered-until> (UTC) on. Sends no request.
+      --dry-run               With --repair-forum-threads: print the changes, write nothing.
 
     The crawl state is kept in SmogonTournamentParser.db. After the first run, only new activity is read:
     page 1 of changed threads, and of tournament threads the new pages with replay posts.
@@ -30,6 +38,8 @@ const string Usage = """
 var collectorOptions = new CollectorOptions();
 var httpOptions = new PoliteHttpOptions();
 var browserOptions = new PlaywrightHttpOptions();
+DateTime? repairCoveredUntil = null;
+var dryRun = false;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -55,18 +65,61 @@ for (var i = 0; i < args.Length; i++)
             collectorOptions.MaxRequests = maxRequests;
             i++;
             break;
+        case "--repair-forum-threads" when i + 1 < args.Length
+            && DateTime.TryParse(args[i + 1], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var coveredUntil):
+            repairCoveredUntil = coveredUntil;
+            i++;
+            break;
+        case "--dry-run":
+            dryRun = true;
+            break;
         default:
             Console.Error.WriteLine($"Unknown or incomplete argument: {args[i]}");
             Console.Error.WriteLine(Usage);
             return 64;
     }
 }
+if (dryRun && repairCoveredUntil == null)
+{
+    Console.Error.WriteLine("--dry-run only goes with --repair-forum-threads.");
+    Console.Error.WriteLine(Usage);
+    return 64;
+}
+
+SQLitePCL.Batteries_V2.Init();
+
+if (repairCoveredUntil is DateTime repairUntil)
+{
+    if (!File.Exists(CachePath))
+    {
+        Console.Error.WriteLine($"{CachePath} not found in {Environment.CurrentDirectory}.");
+        return 1;
+    }
+    // IDistributedCache cannot list its entries; the table of NeoSmart.Caching.Sqlite can.
+    var keys = new List<string>();
+    using (var connection = new SqliteConnection("Data Source=" + CachePath))
+    {
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT key FROM cache WHERE key LIKE $prefix";
+        command.Parameters.AddWithValue("$prefix", CrawlStateRepair.KeyPrefix + "%");
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            keys.Add(reader.GetString(0));
+        }
+    }
+    var cache = new SqliteCache(new SqliteCacheOptions { MemoryOnly = false, CachePath = CachePath });
+    foreach (var line in CrawlStateRepair.RebuildForumThreads(cache, keys, repairUntil, dryRun))
+    {
+        Console.WriteLine(line);
+    }
+    return 0;
+}
 
 // Plain HTTP; the browser starts for the first bot check and passes its cookie on.
 var httpHandler = new PoliteHttpMessageHandler(httpOptions, new BrowserCookieHttpMessageHandler(new PlaywrightHttpMessageHandler(browserOptions)));
 Common.HttpClient = PoliteHttpMessageHandler.CreateClient(httpHandler);
-
-SQLitePCL.Batteries_V2.Init();
 
 try
 {
@@ -75,7 +128,7 @@ try
             new SqliteCacheOptions()
             {
                 MemoryOnly = false,
-                CachePath = "SmogonTournamentParser.db",
+                CachePath = CachePath,
             }
         ),
         collectorOptions
