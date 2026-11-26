@@ -93,17 +93,22 @@ namespace TournamentParser.Tests
             Assert.That(next, Is.Null);
         }
 
-        [Test]
-        public void SearchWithoutResults_IsAnEmptyResult()
+        [TestCase("search-no-results-2026-11-13.html")]
+        [TestCase("search-no-results-2026-11-26-excerpt.html")]
+        public void SearchWithoutResults_IsAnEmptyResult(string fixture)
         {
-            var html = Fixture("search-no-results-2026-11-13.html");
+            var html = Fixture(fixture);
             Assert.That(SearchResultParser.Parse(html, out var next), Is.Empty);
             Assert.That(next, Is.Null);
 
-            var result = new PostSearch(_ => Task.FromResult(html)).SearchForumsAsync([34], new DateTime(2026, 11, 12)).Result;
+            var search = new PostSearch(_ => Task.FromResult(html));
+            var result = search.SearchForumsAsync([34], new DateTime(2026, 11, 12)).Result;
 
             Assert.That(result, Is.Not.Null);
             Assert.That(result!.Hits, Is.Empty);
+            var (outcome, threadHits) = search.SearchThreadAsync(1, 5).Result;
+            Assert.That(outcome, Is.EqualTo(PostSearch.ThreadSearchOutcome.Found));
+            Assert.That(threadHits, Is.Empty);
         }
 
         /// <summary>A forum with the given number of replay posts per day, from 2026-10-01 on, 25 posts per thread page.</summary>
