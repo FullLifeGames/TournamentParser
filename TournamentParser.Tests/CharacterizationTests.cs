@@ -940,6 +940,7 @@ namespace TournamentParser.Tests
         [TestCase("id=\"js-post-", "id=\"post-", "js-post-N", TestName = "Post without its id")]
         [TestCase("message-attribution--split", "message-attribution--new", "attribution header", TestName = "Post without the attribution header")]
         [TestCase("<time ", "<span ", "date", TestName = "Post without a date")]
+        [TestCase("title=\"Mar 22, 2021", "title=\"2021-03-22", "date", TestName = "Post with a date the scanner can't read")]
         [TestCase("<quotable-text class=\"message-body\">", "<div class=\"message-body\">", "body", TestName = "Post without a known body")]
         [TestCase("\n\t</article>", "\n\t</div>", "end", TestName = "Post without its end")]
         public void SmogonPages_EnsureThreadPage_NeedsEveryPostMarker(string marker, string replacement, string missing)
@@ -964,9 +965,21 @@ namespace TournamentParser.Tests
         {
             var pages = Directory.GetFiles(Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures"), "*.html")
                 .Select(path => (Name: Path.GetFileName(path), Html: File.ReadAllText(path)))
-                .Where(page => SmogonPages.HasTemplate(page.Html, "thread_view")).ToList();
-            Assert.That(pages, Has.Count.EqualTo(17));
+                .Where(page => SmogonPages.HasTemplate(page.Html, "thread_view") || SmogonPages.HasTemplate(page.Html, "thread_view_type_poll")).ToList();
+            Assert.That(pages, Has.Count.EqualTo(18));
             Assert.That(pages.Select(page => page.Name + ": " + SmogonPages.UnreadablePost(page.Html)), Has.All.EndsWith(": "));
+        }
+
+        [Test]
+        public void SmogonPages_ThreadPageOf20261126_NeedsTheNameLine()
+        {
+            // Since 2026-11-26 the name line is the only place of a post's author.
+            var page = Fixture("natdex-ubers-teambuilding-2026-11-26-excerpt.html");
+            var second = page.LastIndexOf("<article class=\"message js-post");
+            page = page[..second] + Regex.Replace(page[second..], "\n[^\n]*<h4 class=\"message-name\">[^\n]*", "");
+
+            var error = Assert.Throws<UnexpectedPageException>(() => SmogonPages.EnsureThreadPage(page, "https://www.smogon.com/forums/threads/x.1/"))!;
+            Assert.That(error.Message, Does.Contain("post 2 has no author"));
         }
 
         [Test]

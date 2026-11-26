@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -68,7 +69,12 @@ namespace TournamentParser.Util
         /// <summary>Whether a page or a stored page contains a post.</summary>
         public static bool ContainsPost(string html) => AnyPostStartRegex().IsMatch(html);
 
+        /// <summary>The post's author until 2026-11-25.</summary>
         public const string AuthorMarker = "data-author=\"";
+
+        /// <summary>Since 2026-11-26 the name line of a post holds its author: id, profile link and name.</summary>
+        [GeneratedRegex("<h4 class=\"message-name\"><member-tooltip user-id=\"(\\d+)\"><a href=\"([^\"]*)\"[^>]*>(?:<span[^>]*>)?([^<]*)<")]
+        public static partial Regex AuthorLineRegex();
 
         public const string AttributionMarker = "<header class=\"message-attribution message-attribution--split\">";
 
@@ -78,6 +84,17 @@ namespace TournamentParser.Util
         /// <summary>Whether the line opens the body of a post: an &lt;article&gt; until 2026-11-23, a &lt;quotable-text&gt; since then.</summary>
         public static bool IsPostBodyStart(string line) =>
             line.Contains("<article class=\"message-body js-selectToQuote\">") || line.Contains("<quotable-text class=\"message-body\">");
+
+        /// <summary>Whether the line holds the &lt;time&gt; tag that the scanner reads the post date from, after the attribution header.</summary>
+        public static bool IsPostDateLine(string line) => line.Contains("<time") && line.Contains("title=\"");
+
+        /// <summary>The date in the title ("MMM d, yyyy at h:mm tt") of a <see cref="IsPostDateLine"/> line; null if it does not parse.</summary>
+        public static DateTime? GetPostDate(string line)
+        {
+            var title = line[(line.IndexOf("title=\"") + "title=\"".Length)..];
+            title = title[..title.IndexOf('"')].Replace("at ", "");
+            return DateTime.TryParseExact(title, "MMM d, yyyy h:mm tt", CultureInfo.GetCultureInfo("en-US"), DateTimeStyles.None, out var date) ? date : null;
+        }
 
         [GeneratedRegex("\\sid=\"js-post-\\d+\"")]
         private static partial Regex PostIdRegex();
@@ -98,11 +115,12 @@ namespace TournamentParser.Util
                     continue;
                 }
                 var header = lines.FindIndex(line => line.Contains(AttributionMarker));
+                var date = header == -1 ? null : lines.Skip(header + 1).FirstOrDefault(IsPostDateLine);
                 var missing = !IsPostStart(lines[0]) ? "known start (" + lines[0].Trim() + ")"
-                    : !post.Contains(AuthorMarker) ? "data-author"
+                    : !post.Contains(AuthorMarker) && !lines.Any(line => AuthorLineRegex().IsMatch(line)) ? "author (data-author or name line)"
                     : !PostIdRegex().IsMatch(post) ? "id=\"js-post-N\""
                     : header == -1 ? "attribution header"
-                    : !lines.Skip(header + 1).Any(line => line.Contains("<time") && line.Contains("title=\"")) ? "date"
+                    : date == null || GetPostDate(date) == null ? "date"
                     : !lines.Any(IsPostBodyStart) ? "known body"
                     : !lines.Any(line => line.StartsWith(PostEnd)) ? "end"
                     : null;

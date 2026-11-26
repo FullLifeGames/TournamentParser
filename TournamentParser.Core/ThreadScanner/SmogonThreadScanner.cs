@@ -2,10 +2,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using TournamentParser.Core.Data;
 using TournamentParser.Data;
@@ -51,9 +49,6 @@ namespace TournamentParser.ThreadScanner
         private readonly ConcurrentDictionary<int, byte> _spacedNameWordCounts = new();
 
         private const string ShowdownReplayString = "replay.pokemonshowdown.com/";
-
-        /// <summary>Since 2026-11-26 the name line of a post holds its author: id, profile link and name.</summary>
-        private static readonly Regex AuthorRegex = new("<h4 class=\"message-name\"><member-tooltip user-id=\"(\\d+)\"><a href=\"([^\"]*)\"[^>]*>(?:<span[^>]*>)?([^<]*)<");
 
         /// <summary>
         /// Parses the given threads. Threads with pages in the crawl state are parsed from there without any request;
@@ -262,14 +257,11 @@ namespace TournamentParser.ThreadScanner
             {
                 lineDataHandler.TimerHeader = true;
             }
-            else if (lineDataHandler.TimerHeader && line.Contains("<time") && line.Contains("title=\""))
+            else if (lineDataHandler.TimerHeader && SmogonPages.IsPostDateLine(line))
             {
                 // XenForo used to expose the post date via data-date-string; current markup
-                // only carries it in the <time> tag's title attribute ("MMM d, yyyy at h:mm tt").
-                var temp = line[(line.IndexOf("title=\"") + "title=\"".Length)..];
-                temp = temp[..temp.IndexOf(Common.Quotation)];
-                temp = temp.Replace("at ", "");
-                if (DateTime.TryParseExact(temp, "MMM d, yyyy h:mm tt", CultureInfo.GetCultureInfo("en-US"), DateTimeStyles.None, out var postDate))
+                // only carries it in the <time> tag's title attribute.
+                if (SmogonPages.GetPostDate(line) is DateTime postDate)
                 {
                     lineDataHandler.PostDate = postDate;
                 }
@@ -301,7 +293,7 @@ namespace TournamentParser.ThreadScanner
                 lineDataHandler.PostedBy = lineDataHandler.PostedBy[(lineDataHandler.PostedBy.IndexOf(Common.Quotation) + 1)..];
                 lineDataHandler.PostedBy = lineDataHandler.PostedBy[..lineDataHandler.PostedBy.IndexOf(Common.Quotation)];
             }
-            else if (AuthorRegex.Match(line) is { Success: true } author)
+            else if (SmogonPages.AuthorLineRegex().Match(line) is { Success: true } author)
             {
                 // Until 2026-11-25 the post carried data-author and the user link data-user-id.
                 lineDataHandler.DataUserId = int.Parse(author.Groups[1].Value);
