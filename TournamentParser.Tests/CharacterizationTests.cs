@@ -735,6 +735,31 @@ namespace TournamentParser.Tests
             Assert.That(ScanSummary(ScanStored(storedMixed)), Is.EqualTo(ScanSummary(ScanStored(storedOld))));
         }
 
+        [Test]
+        public void ThreadPageOf20261126_ReadsAuthorsAndPostDates()
+        {
+            // Since Nov 26, 2026 a post has no data-author and its user link no data-user-id.
+            const string url = "https://www.smogon.com/forums/threads/national-dex-ubers-teambuilding-competition.3732930/";
+            var fake = new FakeHttpMessageHandler();
+            fake.Map(url, Fixture("natdex-ubers-teambuilding-2026-11-26-excerpt.html"));
+            Common.HttpClient = new HttpClient(fake);
+            var scanner = new SmogonThreadScanner();
+            var result = scanner.AnalyzeTopic(url, CancellationToken.None).Result!;
+            var stored = new SmogonThreadScanner();
+            stored.AnalyzeTopic(url, result.CollectedLinks, CancellationToken.None).Wait();
+
+            // The date of the second post, not of its edit.
+            Assert.That(result.LastPost, Is.EqualTo(new DateTime(2026, 11, 10, 11, 40, 0)));
+            foreach (var users in new[] { scanner.NameUserTranslation, stored.NameUserTranslation })
+            {
+                Assert.That(users.Select(kv => $"{kv.Key} {kv.Value.NormalName} #{kv.Value.Id} {kv.Value.ProfileLink}"), Is.EquivalentTo(new[]
+                {
+                    "theshowdownhero TheShowdownHero #436537 /forums/members/theshowdownhero.436537/",
+                    "sami Sami #604820 /forums/members/sami.604820/",
+                }));
+            }
+        }
+
         #endregion
 
         #region Collector
