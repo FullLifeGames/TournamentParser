@@ -1088,10 +1088,12 @@ namespace TournamentParser.Tests
 
             // m1 has a later match (m2) in the same normalized thread => alice advanced => won m1.
             Assert.That(m1.Winner, Is.EqualTo("alice"));
+            Assert.That(m1.WinnerGuessed, Is.True);
             Assert.That(m1.Finished, Is.True);
             // m2 is the latest in its thread, m3 is alone in its thread: no inference.
             Assert.That(m2.Winner, Is.Null);
             Assert.That(m3.Winner, Is.Null);
+            Assert.That(m2.WinnerGuessed || m3.WinnerGuessed, Is.False);
         }
 
         [Test]
@@ -1108,11 +1110,24 @@ namespace TournamentParser.Tests
             new SmogonFinalizer().Finalize(new Dictionary<string, User> { { "alice", alice } });
 
             Assert.That(m1.Winner, Is.EqualTo("bob"));
+            Assert.That(m1.WinnerGuessed, Is.False);
         }
 
         #endregion
 
         #region Data types
+
+        [Test]
+        public void TournamentMatch_WritesWinnerGuessedOnlyWhenTrue()
+        {
+            var named = JsonConvert.SerializeObject(new TournamentMatch { Winner = "alice" });
+            var guessed = JsonConvert.SerializeObject(new TournamentMatch { Winner = "alice", WinnerGuessed = true });
+
+            Assert.That(named, Does.Not.Contain("\"g\""));
+            Assert.That(guessed, Does.Contain("\"g\":true"));
+            Assert.That(JsonConvert.DeserializeObject<TournamentMatch>(named)!.WinnerGuessed, Is.False);
+            Assert.That(JsonConvert.DeserializeObject<TournamentMatch>(guessed)!.WinnerGuessed, Is.True);
+        }
 
         [Test]
         public void User_ToString_PinsFormat()

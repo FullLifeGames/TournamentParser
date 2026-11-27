@@ -22,6 +22,14 @@ namespace TournamentParser.Data
         [JsonProperty("w")]
         public string? Winner { get; set; }
 
+        /// <summary>
+        /// True when no post names the winner and the finalizer took for it the player who has a later match in the
+        /// same tour. That guess is wrong where both players play on, as in double elimination and team tours.
+        /// Written to the JSON only when true.
+        /// </summary>
+        [JsonProperty("g", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool WinnerGuessed { get; set; }
+
         [JsonIgnore]
         public bool Irrelevant { get; set; }
 

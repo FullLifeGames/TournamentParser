@@ -32,7 +32,8 @@ namespace TournamentParser.Finalizer
                 user.Matches = new ConcurrentBag<TournamentMatch>(keptMatches);
 
                 // A match without a recorded winner is won by this user if the user has a
-                // later match in the same (normalized) thread: they must have advanced.
+                // later match in the same (normalized) thread: they must have advanced. A guess:
+                // in double elimination and team tours the other player plays on too.
                 var latestPostDates = new Dictionary<string, DateTime>();
                 foreach (var match in keptMatches)
                 {
@@ -47,6 +48,7 @@ namespace TournamentParser.Finalizer
                     if (match.Winner == null && match.PostDate < latestPostDates[NormalizeThreadName(match)])
                     {
                         match.Winner = user.Name;
+                        match.WinnerGuessed = true;
                         match.Finished = true;
                     }
                 }
